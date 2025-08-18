@@ -289,14 +289,26 @@ app.post("/save-waapify-config", async (req: Request, res: Response) => {
 
 /* -------------------- External Authentication Endpoint -------------------- */
 app.post("/external-auth", async (req: Request, res: Response) => {
-  const { access_token, instance_id, whatsapp_number } = req.body;
+  console.log('=== External Auth Request - Full Body ===', JSON.stringify(req.body, null, 2));
+  console.log('=== Headers ===', req.headers);
   
-  console.log('=== External Auth Request ===', req.body);
+  // Check all possible field variations
+  const access_token = req.body.access_token || req.body.accessToken || req.body['access-token'];
+  const instance_id = req.body.instance_id || req.body.instanceId || req.body['instance-id'];
+  const whatsapp_number = req.body.whatsapp_number || req.body.whatsappNumber || req.body['whatsapp-number'];
   
-  if (!access_token || !instance_id || !whatsapp_number) {
+  console.log('=== Extracted Values ===', {
+    access_token,
+    instance_id, 
+    whatsapp_number
+  });
+  
+  if (!access_token || !instance_id) {
     return res.status(400).json({
       success: false,
-      error: "Missing required fields: access_token, instance_id, whatsapp_number"
+      error: "Missing required fields: access_token, instance_id",
+      received_fields: Object.keys(req.body),
+      received_data: req.body
     });
   }
   
