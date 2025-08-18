@@ -369,7 +369,7 @@ app.post("/external-auth", async (req: Request, res: Response) => {
     const authResult = await testWaapifyConnection(access_token, instance_id);
     
     if (authResult.success) {
-      // Return success response for GHL
+      // Return success response for GHL with provider registration
       return res.json({
         success: true,
         message: "Waapify authentication successful",
@@ -379,6 +379,22 @@ app.post("/external-auth", async (req: Request, res: Response) => {
           whatsapp_number: whatsapp_number,
           status: "authenticated",
           provider: "waapify"
+        },
+        // Provider registration for GHL
+        provider: {
+          id: "waapify-sms",
+          name: "Waapify",
+          type: "SMS",
+          capabilities: ["SMS", "MMS"],
+          phoneNumbers: [
+            {
+              id: instance_id,
+              number: `+${whatsapp_number}`,
+              displayNumber: whatsapp_number,
+              capabilities: ["SMS", "MMS"],
+              status: "active"
+            }
+          ]
         }
       });
     } else {
@@ -423,6 +439,51 @@ async function testWaapifyConnection(accessToken: string, instanceId: string) {
     };
   }
 }
+
+/* -------------------- Phone Numbers API for GHL -------------------- */
+app.get("/api/phone-numbers", async (req: Request, res: Response) => {
+  const { companyId, locationId } = req.query as { companyId: string; locationId: string };
+  
+  console.log('=== Phone Numbers API Request ===', { companyId, locationId });
+  
+  try {
+    // Get Waapify config for this location
+    const waapifyConfig = Storage.getWaapifyConfig(companyId, locationId);
+    
+    if (!waapifyConfig) {
+      return res.json({
+        phoneNumbers: [],
+        success: false,
+        message: "Waapify not configured"
+      });
+    }
+    
+    // Return WhatsApp number as available phone number
+    return res.json({
+      phoneNumbers: [
+        {
+          id: waapifyConfig.instanceId,
+          number: `+${waapifyConfig.whatsappNumber}`,
+          displayNumber: waapifyConfig.whatsappNumber,
+          type: "SMS",
+          provider: "waapify",
+          capabilities: ["SMS", "MMS"],
+          status: "active",
+          country: "MY"
+        }
+      ],
+      success: true
+    });
+    
+  } catch (error: any) {
+    console.error('Phone numbers API error:', error);
+    return res.status(500).json({
+      phoneNumbers: [],
+      success: false,
+      error: error.message
+    });
+  }
+});
 
 /* -------------------- SMS Override Endpoint (Custom Conversation Provider) -------------------- */
 app.post("/api/send-sms", async (req: Request, res: Response) => {
