@@ -1,0 +1,414 @@
+Info Feed for claude.
+
+apabila kau dh baca code projek aku.. aku nk kau tahu yg kod ni aku dh berjaya launch dan deploy di render sbgai permulaan untuk aku cuba..code ni juga berjaya buat oauth integration plugin dn approve plugin aku untuk install . so any user with link untuk install plugin aku akan boleh install dah. dn aku dh berjaya install plugin waapify ni, cuma masalah ada a few kea ubah dn update, sbb bila aku install, aku xdpt pon guna waapify tuh as custom conversation provider.. tujuan buat plugin ni adalah aku nk waapify ni ada dlam sistem GHL so kita dpt guna sistem ni untuk automation function send wasap dn sebagainya. jadi aku ada tengok lah sistem wasap org lain . dia overide sms type custom provider tuh bila buat integration.. so instead of send sms sebenarnya dia guna sms tuh untuk send whatsapp. so dia boleh la guna smua fungsi dlm ghl bulk sms ke apa ke smua boleh tpi hakikat dia akan guna plugin integration tuh la which is whatsapp api unofficial.. so aku ada own whstapp unofficial aku.. dibawah aku akan sertakan documentation wasap api juga....
+
+
+apa yg kena buat adalah makesure ko ajar aku setting plugin dlm market place yg betul, kedua improve kod plugin installation ni... auth dh berjaya cuma features lepas install xleh pakai mybe setting salah.
+
+aku tgok org lain buat depa buat installation document menarik juga boleh apply pada plugin kita.
+
+so aku share cara depa dlu yer:
+---------
+Step 2 – Install Smstools in HighLevel (GHL)
+
+
+Log in to your HighLevel agency account.
+If you haven’t already, create a sub-account for the client or business you want to connect.
+Switch to the sub-account by logging in or selecting it from your agency dashboard.
+Navigate to the App Marketplace.
+Search for “Smstools” and click Install.
+Once installed, return to the App Marketplace, go to Installed Apps, and click on Smstools to begin the authorization process.
+You will be prompted to enter the Client ID, Client Secret, and Phone Number you gathered in Step 1.
+Enter the details and confirm to complete the installation.
+If everything is set up correctly, you will see the message: “You are now connected to Smstools.”
+
+Step 3 – Set Smstools as the Default Provider
+Go to Settings > Phone Numbers.
+In the Provider dropdown, select Smstools.
+Click Save to confirm your selection.
+
+
+Step 4 – Test the SMS Conversation
+
+
+Navigate to Contacts and create a test contact using a valid mobile phone number.
+Go to Conversations > New Conversation > Direct Message.
+Select your test contact and send an outbound SMS.
+Check the recipient's phone to ensure the Sender ID (phone number) is displayed correctly.
+Reply to the message from the test phone.
+If everything is working properly, you’ll see both the outbound and inbound messages appear in the conversation view.
+
+
+✅ You’ve successfully completed your test!
+
+
+---------------
+
+mcm skrang plugin aku dh dpt install lepas install and proceed di auto redrect ke page dashboard ghl la, https://app.gohighlevel.com/agency_launchpad
+
+so part aku xda lepas authorization process. adalah bahagian ni:
+You will be prompted to enter the Client ID, Client Secret, and Phone Number you gathered in Step 1.
+Enter the details and confirm to complete the installation.
+If everything is set up correctly, you will see the message: “You are now connected to Smstools.”
+
+so aku punya xda mcm diorang punya plugin tuh. diorang punya 
+	
+Review the app details and click Allow & Install lepas tuh akan popup function	
+As required, follow specific instructions from the custom conversation provider to integrate (ex: get your API key for their service). then contionue bru lah ke dashboard aku rasa lepas dh setel outh tuh
+
+
+so aku nk tambah fungsi ni lah xsure benda ni setting dalam marketplace atau kan coding autorization sbb part ni kot penting untuk set api credential tuh.. so mcm aku adalah access token dn instance id dan wsap number lah user kena letak,.. dn credential ni diorang boleh dpt di dashboars sistem waapify lepas diorang link whatsapp.
+
+manakalah step 3 lepas je aku install plugin funtion conversation provider tuh xda untuk aku choose dan step 4 pon xboleh.. dlm chat sms ada waapify dn sms tpi bila aku cuba send xleh sbb dia xda link dgn number aku as number untuk send.. so mybe ada part mana2 setting dlm marketplace developemtn plugin yg aku xbuat.. bnyak lagi kot setting2 tuh . cuma tuh lah xtau.. so ni aku explain lah masalah so apa boleh kita buat dgn code aku dn cara buat plugin di market place dgn betul.
+
+
+so aku nk buat lah wasap api aku yg overide sms functiondlm ghl so boleh guna smua function automation workflow mcm bulk sms, live chat, ai chatbot dlm automation,dan etc,
+
+
+untuk pengetahuan kau juga maksure plugin ni kita buat untuk multiple user ghl guna dn diorang memasing ada akaun waapify juga berbeza jgn kau hardcode pulak info2 credential sbb benda tuh kang user lain nk guna terpakai credential yg akan aku bagi contoh dibawah so masalah.
+
+
+
+
+info penting untuk claude faham:
+
+
+1) cara aku setting plugin ghl di : https://marketplace.gohighlevel.com/app-settings
+
+Update a Conversation Provider
+
+This provider will be used to send and receive messages from GoHighLevel
+
+Name
+Waapify
+Type
+SMS
+Delivery URL
+https://stag.waapify.com/api/send.php
+Is this a Custom Conversation Provider?
+
+Always show this Conversation Provider?
+
+Alias (Optional)
+Enter Alias
+Enter Alias
+Upload logo (Optional)
+
+
+2) ini pulak configure apps setting di section workflow
+
+boleh add trigger. dn aku xtau kena setting atau tak trigger ni
+
+ni paparannya
+Trigger Data
+
+Add sample trigger payload data to configure filters and custom variables. Learn more
+
+1
+
+Manage Filters
+
+Add filters using sample trigger data, for users to use in workflows trigger configuration. Learn more
+
+Name
+Type
+Required
+Reference
+No Data
+Manage Custom Variables
+
+Add filters using sample trigger data, for users to use in workflows trigger configuration. Learn more
+
+Name
+Type
+Reference
+No Data
+Subscription URL
+
+Collect trigger configuration details through API endpoint. Learn more
+
+URL(POST)
+Enter URL
+Enter URL
+Headers
+
+
+3) kemudian dalam workflow ada action. kita boleh add banyak action
+salah stu aku cuba buat action send message
+
+ni contoh:
+App Dashboard
+Testing
+My Apps
+Product Updates
+Notifications
+Support
+Send Message
+
+Information
+Configuration
+Back
+Send Message Version 1.3 is in draft.
+
+Last Updated 18/08/2025.
+
+Manage Fields
+
+Construct form to collect the data required for sending to API. Learn more
+
+Name
+Type
+Required
+Reference
+number
+string
+Yes
+number
+message
+string
+Yes
+message
+instance_id
+string
+Yes
+instance_id
+access_token
+string
+Yes
+access_token
+type
+string
+Yes
+type
+Branches
+
+Allow Branches
+(Beta)
+
+
+By enabling this option, branches can be configured to this action. Learn more
+
+Action Execution
+
+
+
+
+
+
+URL
+https://stag.waapify.com/api/send.php?
+Headers
+Label
+Content-Type
+Value
+ application/x-www-form-urlencoded
+Body
+
+
+
+
+Pause Execution
+(Beta)
+
+
+By enabling this pause execution, the contact will be held at this action unless resume webhook is requested. Learn more
+
+
+ni smua aku main setting je dlu xsure jadi ke tak..
+
+4) ini bahagian apps setting auth
+
+Install Link
+Hide
+
+Standard
+Whitelabel
+https://marketplace.gohighlevel.com/oauth/chooselocation?response_type=code&redirect_uri=https%3A%2F%2Fwaaghl.waapify.com%2Fauthorize-handler&client_id=689f65551daa1d452273c422-meegkrcn&scope=conversations.readonly+conversations.write+conversations%2Fmessage.readonly+conversations%2Fmessage.write+conversations%2Freports.readonly+conversations%2Flivechat.write+users.readonly+opportunities.write+opportunities.readonly+workflows.readonly+contacts.readonly+contacts.write
+Scopes *
+
+Scopes determine the permissions your App has to access data or perform actions. Customers installing the App need to approve all the scopes. It's recommended to ask for as few scopes as possible for your App.
+
+Select Scopes
+
+conversations.readonly
+
+conversations.write
+
+conversations/message.readonly
+
+conversations/message.write
+
+conversations/reports.readonly
+
+conversations/livechat.write
+
+users.readonly
+
+opportunities.write
+
+opportunities.readonly
+
+workflows.readonly
+
+contacts.readonly
+
+contacts.write
+
+Redirect URLs *
+
+You must include at least one redirect URL before making your App public. Customers are redirected to these allowed URLs after granting access to your App.
+
+Redirect URL
+
+https://example.com/leadconnector/oauth
+https://example.com/leadconnector/oauth
+Added redirect URLs
+
+https://waaghl.waapify.com/authorize-handler
+Client Keys
+
+Generate client id and client secrets for your app
+
+Default client key is used when installing the app via marketplace.
+
+Default
+Name
+Client ID
+Client Secret
+Created On
+Actions
+test
+689f65551daa1d452273c422-meegkrcn
+*************
+Aug 17, 2025
+Shared Secret
+
+Generate Shared Secret key for your App
+
+Shared Secret key
+
+################################0610
+
+
+
+
+
+waapify credential
+Your Access Token: 1740aed492830374b432091211a6628d
+your instance id: 673F5A50E7194
+
+Instance Api
+POST Create Instance
+https://stag.waapify.com/api/createinstance.php?access_token=1740aed492830374b432091211a6628d
+Create a new Instance ID
+Params
+access_token	1740aed492830374b432091211a6628d
+POST Get QR Code
+https://stag.waapify.com/api/getqrcode.php?instance_id=609ACF283XXXX&access_token=1740aed492830374b432091211a6628d
+Display QR code to login to Whatsapp web. You can get the results returned via Webhook
+Params
+instance_id	609ACF283XXXX
+access_token	1740aed492830374b432091211a6628d
+POST Set Receving Webhook
+https://stag.waapify.com/api/setwebhook.php?webhook_url=https://webhook.site/1b25464d6833784f96eef4xxxxxxxxxx&enable=true&instance_id=609ACF283XXXX&access_token=1740aed492830374b432091211a6628d
+Get all return values from Whatsapp. Like connection status, Incoming message, Outgoing message, Disconnected, Change Battery,...
+Params
+webhook_url	https://webhook.site/1b25464d6833784f96eef4xxxxxxxxxx
+enable	true
+instance_id	609ACF283XXXX
+access_token	1740aed492830374b432091211a6628d
+POST Reboot Instance
+https://stag.waapify.com/api/reboot.php?instance_id=609ACF283XXXX&access_token=1740aed492830374b432091211a6628d
+Logout Whatsapp web and do a fresh scan
+Params
+instance_id	609ACF283XXXX
+access_token	1740aed492830374b432091211a6628d
+POST Reset Instance
+https://stag.waapify.com/api/resetinstance.php?instance_id=609ACF283XXXX&access_token=1740aed492830374b432091211a6628d
+This will logout Whatsapp web, Change Instance ID, Delete all old instance data
+Params
+instance_id	609ACF283XXXX
+access_token	1740aed492830374b432091211a6628d
+POST Reconnect
+https://stag.waapify.com/api/reconnect.php?instance_id=609ACF283XXXX&access_token=1740aed492830374b432091211a6628d
+Re-initiate connection from app to Whatsapp web when lost connection
+Params
+instance_id	609ACF283XXXX
+access_token	1740aed492830374b432091211a6628d
+Send Direct Message Api
+POST Send Text
+https://stag.waapify.com/api/send.php?number=84933313xxx&type=text&message=test%20message&instance_id=609ACF283XXXX&access_token=1740aed492830374b432091211a6628d
+Send a text message to a phone number through the app
+Params
+number	84933313xxx
+type	text
+message	test message
+instance_id	609ACF283XXXX
+access_token	1740aed492830374b432091211a6628d
+POST Send Template
+https://stag.waapify.com/api/send.php?number=84933313xxx&type=template&message=templateName&instance_id=609ACF283XXXX&access_token=1740aed492830374b432091211a6628d
+Send a List/Button Template to a phone number through the app
+Params
+number	84933313xxx
+type	template
+message	Template Name
+instance_id	609ACF283XXXX
+access_token	1740aed492830374b432091211a6628d
+POST Send Media & File
+https://stag.waapify.com/api/send.php?number=84933313xxx&type=media&message=test%20message&media_url=https://i.pravatar.cc&filename=file_test.jpg&instance_id=609ACF283XXXX&access_token=1740aed492830374b432091211a6628d
+Send a media or file with message to a phone number through the app
+Params
+number	84933313xxx
+type	media
+message	test message
+media_url	https://i.pravatar.cc
+filename (Just use for send document)	file_test.pdf
+instance_id	609ACF283XXXX
+access_token	1740aed492830374b432091211a6628d
+POST Check Phone
+https://stag.waapify.com/api/send.php?number=84933313xxx&type=check_phone&instance_id=609ACF283XXXX&access_token=1740aed492830374b432091211a6628d
+Send a phone to check if is registered on Whatsapp
+Params
+number	84933313xxx
+type	check_phone
+instance_id	609ACF283XXXX
+access_token	1740aed492830374b432091211a6628d
+Group Api
+POST Send Text Message Group
+https://stag.waapify.com/api/sendgroupmsg.php?group_id=84987694574-1618740914@g.us&type=text&message=test%20message&instance_id=609ACF283XXXX&access_token=1740aed492830374b432091211a6628d
+Send a text message to a group through the app
+Params
+group_id	84987694574-1618740914@g.us
+type	text
+message	test message
+instance_id	609ACF283XXXX
+access_token	1740aed492830374b432091211a6628d
+POST Send Media & File Message Group
+https://stag.waapify.com/api/sendgroupmsg.php?group_id=84987694574-1618740914@g.us&type=media&message=test%20message&media_url=https://i.pravatar.cc&filename=file_test.jpg&instance_id=609ACF283XXXX&access_token=1740aed492830374b432091211a6628d
+Send a media or file with message to a group through the app
+Params
+group_id	84987694574-1618740914@g.us
+type	media
+message	test message
+media_url	https://i.pravatar.cc
+filename (Just use for send document)	file_test.pdf
+instance_id	609ACF283XXXX
+access_token	1740aed492830374b432091211a6628d
+Manage Contact Groups
+POST Add Phone
+https://stag.waapify.com/api/contact_groups.php?contact=520000XXXXXXX&name=contactname&type=add&group_id=1&access_token=1740aed492830374b432091211a6628d
+Add Phone/group to a especific contacts group for campaigns
+Params
+contact	520000XXXXXXX or 84987694574-1618740914@g.us
+name	contactname
+type	add
+group_id	1
+access_token	1740aed492830374b432091211a6628d
+POST Remove Phone
+https://stag.waapify.com/api/contact_groups.php?contact=520000XXXXXXX&type=remove&group_id=1&access_token=1740aed492830374b432091211a6628d
+Remove Phone/group from especific contacts group for campaigns
+Params
+contact	520000XXXXXXX or 84987694574-1618740914@g.us
+type	remove
+group_id	1
+access_token	1740aed492830374b432091211a6628d
