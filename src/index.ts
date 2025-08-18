@@ -40,9 +40,14 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
     const installations = Storage.getAll();
     console.log("=== All installations ===", installations);
 
-    // Show configuration popup instead of redirect
+    // DISABLED: Popup configuration (using external auth instead)
+    // Redirect directly to GHL dashboard since external auth handles credentials
     const latestInstallation = installations[installations.length - 1];
     
+    console.log('=== OAuth Success - Redirecting to GHL Dashboard ===');
+    res.redirect('https://app.gohighlevel.com/');
+    
+    /* DISABLED POPUP CODE:
     const popupHTML = `
       <!DOCTYPE html>
       <html>
@@ -151,6 +156,8 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
     `;
     
     res.send(popupHTML);
+    */ // END DISABLED POPUP CODE
+    
   } catch (error) {
     console.error("Authorization error:", error);
     res.status(500).send("Authorization failed");
@@ -318,6 +325,17 @@ app.post("/external-auth", async (req: Request, res: Response) => {
         test_mode: true
       }
     });
+  }
+  
+  // Handle real installation data - check all possible field formats
+  if (!access_token && !instance_id) {
+    console.log('=== No credentials found, checking request body keys ===');
+    console.log('Available keys:', Object.keys(req.body));
+    
+    // Try to find credentials in any format
+    for (const key of Object.keys(req.body)) {
+      console.log(`${key}: ${req.body[key]}`);
+    }
   }
   
   if (!access_token || !instance_id) {
