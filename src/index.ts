@@ -554,6 +554,62 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
   }
 });
 
+/* -------------------- Conversation Provider Status Endpoint -------------------- */
+app.get("/provider/status", async (req: Request, res: Response) => {
+  const { locationId, companyId } = req.query as { locationId: string; companyId: string };
+  
+  console.log("=== Provider Status Check ===", { locationId, companyId });
+  
+  try {
+    if (!locationId) {
+      return res.json({
+        status: "inactive",
+        error: "Location ID required"
+      });
+    }
+    
+    // Find installation
+    const installations = Storage.getAll();
+    const installation = installations.find(inst => inst.locationId === locationId);
+    
+    if (!installation) {
+      return res.json({
+        status: "inactive",
+        error: "Installation not found"
+      });
+    }
+    
+    // Check Waapify config
+    const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, locationId);
+    if (!waapifyConfig) {
+      return res.json({
+        status: "inactive",
+        error: "Waapify not configured"
+      });
+    }
+    
+    // Test connection
+    const testResult = await testWaapifyConnection(waapifyConfig.accessToken, waapifyConfig.instanceId);
+    
+    res.json({
+      status: testResult.success ? "active" : "error",
+      provider: "waapify",
+      providerName: "Waapify WhatsApp",
+      whatsappNumber: waapifyConfig.whatsappNumber,
+      instanceId: waapifyConfig.instanceId,
+      lastChecked: new Date().toISOString(),
+      connectionTest: testResult
+    });
+    
+  } catch (error: any) {
+    console.error("Provider status error:", error);
+    res.json({
+      status: "error",
+      error: error.message
+    });
+  }
+});
+
 /* -------------------- WhatsApp Actions Endpoints -------------------- */
 
 // Send WhatsApp Text Message
