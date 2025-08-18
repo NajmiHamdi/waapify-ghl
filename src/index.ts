@@ -183,10 +183,27 @@ app.post("/save-waapify-config", async (req: Request, res: Response) => {
 async function testWaapifyConnection(accessToken: string, instanceId: string) {
   try {
     const axios = require('axios');
-    const response = await axios.get(`https://stag.waapify.com/api/instance-status.php?instance_id=${instanceId}&access_token=${accessToken}`);
+    
+    // Test with a simple send API endpoint instead
+    const response = await axios.get(`https://stag.waapify.com/api/send.php`, {
+      params: {
+        number: '60123456789', // Test number
+        type: 'check_phone',
+        instance_id: instanceId,
+        access_token: accessToken
+      },
+      timeout: 10000 // 10 second timeout
+    });
+    
+    console.log('Waapify test response:', response.data);
     return { success: true, data: response.data };
   } catch (error: any) {
-    return { success: false, error: error.message };
+    console.error('Waapify connection test error:', error.response?.data || error.message);
+    return { 
+      success: false, 
+      error: error.response?.data?.message || error.message,
+      details: error.response?.data || 'Connection failed'
+    };
   }
 }
 
