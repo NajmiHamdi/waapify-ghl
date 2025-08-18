@@ -40,9 +40,117 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
     const installations = Storage.getAll();
     console.log("=== All installations ===", installations);
 
-    // Instead of direct redirect, show configuration page
+    // Show configuration popup instead of redirect
     const latestInstallation = installations[installations.length - 1];
-    res.redirect(`/configure?companyId=${latestInstallation.companyId}&locationId=${latestInstallation.locationId}`);
+    
+    const popupHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <title>Waapify Configuration</title>
+          <style>
+              body { margin: 0; padding: 20px; font-family: Arial, sans-serif; background: #f5f5f5; }
+              .modal { background: white; border-radius: 8px; padding: 30px; max-width: 500px; margin: 20px auto; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+              h2 { color: #333; margin-bottom: 20px; text-align: center; }
+              .form-group { margin-bottom: 20px; }
+              label { display: block; margin-bottom: 8px; font-weight: bold; color: #555; }
+              input { width: 100%; padding: 12px; border: 2px solid #ddd; border-radius: 6px; font-size: 16px; box-sizing: border-box; }
+              input:focus { border-color: #007cba; outline: none; }
+              button { width: 100%; background: #007cba; color: white; padding: 14px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; }
+              button:hover { background: #005a87; }
+              button:disabled { background: #ccc; cursor: not-allowed; }
+              .success { color: #28a745; text-align: center; margin-top: 15px; }
+              .error { color: #dc3545; text-align: center; margin-top: 15px; }
+              .info { background: #e3f2fd; padding: 15px; border-radius: 6px; margin-bottom: 20px; }
+              .close-info { color: #1976d2; font-size: 14px; }
+          </style>
+      </head>
+      <body>
+          <div class="modal">
+              <h2>🚀 Complete Waapify Setup</h2>
+              
+              <div class="info">
+                  <div class="close-info">
+                      <strong>Almost done!</strong> Enter your Waapify credentials to start sending WhatsApp messages through GHL.
+                  </div>
+              </div>
+              
+              <form id="configForm">
+                  <div class="form-group">
+                      <label>Access Token:</label>
+                      <input type="text" id="accessToken" placeholder="1740aed492830374b432091211a6628d" required>
+                  </div>
+                  
+                  <div class="form-group">
+                      <label>Instance ID:</label>
+                      <input type="text" id="instanceId" placeholder="673F5A50E7194" required>
+                  </div>
+                  
+                  <div class="form-group">
+                      <label>WhatsApp Number:</label>
+                      <input type="text" id="whatsappNumber" placeholder="60168970072" required>
+                  </div>
+                  
+                  <button type="submit" id="saveBtn">Save & Complete Setup</button>
+              </form>
+              
+              <div id="message"></div>
+          </div>
+          
+          <script>
+              document.getElementById('configForm').addEventListener('submit', async (e) => {
+                  e.preventDefault();
+                  
+                  const messageDiv = document.getElementById('message');
+                  const saveBtn = document.getElementById('saveBtn');
+                  const accessToken = document.getElementById('accessToken').value;
+                  const instanceId = document.getElementById('instanceId').value;
+                  const whatsappNumber = document.getElementById('whatsappNumber').value;
+                  
+                  saveBtn.disabled = true;
+                  saveBtn.textContent = 'Testing connection...';
+                  
+                  try {
+                      const response = await fetch('/save-waapify-config', {
+                          method: 'POST',
+                          headers: {
+                              'Content-Type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                              companyId: '${latestInstallation.companyId}',
+                              locationId: '${latestInstallation.locationId}',
+                              accessToken,
+                              instanceId,
+                              whatsappNumber
+                          })
+                      });
+                      
+                      const result = await response.json();
+                      
+                      if (response.ok) {
+                          messageDiv.innerHTML = '<p class="success">✅ Configuration saved successfully!</p>';
+                          saveBtn.textContent = 'Setup Complete!';
+                          setTimeout(() => {
+                              window.close(); // Close popup
+                              window.location.href = 'https://app.gohighlevel.com/'; // Fallback redirect
+                          }, 2000);
+                      } else {
+                          messageDiv.innerHTML = '<p class="error">❌ Error: ' + result.error + '</p>';
+                          saveBtn.disabled = false;
+                          saveBtn.textContent = 'Save & Complete Setup';
+                      }
+                  } catch (error) {
+                      messageDiv.innerHTML = '<p class="error">❌ Error: Failed to save configuration</p>';
+                      saveBtn.disabled = false;
+                      saveBtn.textContent = 'Save & Complete Setup';
+                  }
+              });
+          </script>
+      </body>
+      </html>
+    `;
+    
+    res.send(popupHTML);
   } catch (error) {
     console.error("Authorization error:", error);
     res.status(500).send("Authorization failed");
