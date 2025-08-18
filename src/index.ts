@@ -287,6 +287,51 @@ app.post("/save-waapify-config", async (req: Request, res: Response) => {
   }
 });
 
+/* -------------------- External Authentication Endpoint -------------------- */
+app.post("/external-auth", async (req: Request, res: Response) => {
+  const { access_token, instance_id, whatsapp_number } = req.body;
+  
+  console.log('=== External Auth Request ===', req.body);
+  
+  if (!access_token || !instance_id || !whatsapp_number) {
+    return res.status(400).json({
+      success: false,
+      error: "Missing required fields: access_token, instance_id, whatsapp_number"
+    });
+  }
+  
+  try {
+    // Test Waapify connection
+    const authResult = await testWaapifyConnection(access_token, instance_id);
+    
+    if (authResult.success) {
+      // Return success response for GHL
+      return res.json({
+        success: true,
+        message: "Waapify authentication successful",
+        data: {
+          access_token: access_token,
+          instance_id: instance_id, 
+          whatsapp_number: whatsapp_number,
+          status: "authenticated",
+          provider: "waapify"
+        }
+      });
+    } else {
+      return res.status(401).json({
+        success: false,
+        error: "Waapify authentication failed: " + authResult.error
+      });
+    }
+  } catch (error: any) {
+    console.error('External auth error:', error);
+    return res.status(500).json({
+      success: false,
+      error: "Authentication service error"
+    });
+  }
+});
+
 /* -------------------- Test Waapify Connection -------------------- */
 async function testWaapifyConnection(accessToken: string, instanceId: string) {
   try {
