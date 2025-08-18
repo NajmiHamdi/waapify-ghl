@@ -19,15 +19,18 @@ send_whatsapp_report() {
     local message="$1"
     local timestamp=$(date)
     
-    # Send via our API
-    curl -s -X POST "${NGROK_URL}/action/send-whatsapp-text" \
+    # Send via our API (with error logging)
+    local response=$(curl -s -X POST "${NGROK_URL}/action/send-whatsapp-text" \
         -H "Content-Type: application/json" \
         -d "{
             \"number\": \"${WHATSAPP_NUMBER}\",
             \"message\": \"${message}\",
             \"instance_id\": \"673F5A50E7194\",
             \"access_token\": \"1740aed492830374b432091211a6628d\"
-        }" > /dev/null 2>&1
+        }" 2>&1)
+    
+    # Log response for debugging
+    echo "WhatsApp API Response: $response" >> "${LOG_FILE}"
     
     # Also log locally
     echo "${timestamp}: ${message}" >> "$LOG_FILE"
@@ -54,21 +57,10 @@ while true; do
     emoji="${emojis[$emoji_index]}"
     message="${messages[$message_index]}"
     
-    # Calculate next ping time
-    next_ping=$(date -v +8M "+%a %b %d %H:%M:%S %Z %Y" 2>/dev/null || date -d "+8 minutes" "+%a %b %d %H:%M:%S %Z %Y" 2>/dev/null || date "+%a %b %d %H:%M:%S %Z %Y")
+    # Send simple WhatsApp report (avoid multiline JSON issues)
+    simple_message="${emoji} ${message} #${counter} | Time: $(date "+%H:%M:%S") | Server: Running | Ngrok: Active | Session healthy!"
     
-    # Send WhatsApp report with more details
-    whatsapp_message="${emoji} ${message} #${counter}
-
-🖥️ Server: Running (localhost:3068)
-🌐 Ngrok: Active (${NGROK_URL})
-⏰ Time: $(date "+%H:%M:%S")
-📅 Date: $(date "+%Y-%m-%d")
-🔄 Next ping: 8 minutes
-
-Session healthy! 🟢"
-    
-    send_whatsapp_report "$whatsapp_message"
+    send_whatsapp_report "$simple_message"
     
     echo "📱 WhatsApp report #${counter} sent at $(date)"
     
