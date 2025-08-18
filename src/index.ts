@@ -17,8 +17,30 @@ const ghl = new GHL();
 const port = process.env.PORT || 3068;
 const path = __dirname + "/ui/dist/";
 
-// Body parser
-app.use(json({ type: "application/json" }));
+// Body parser with error handling
+app.use(json({ 
+  type: "application/json",
+  verify: (req: any, res, buf) => {
+    req.rawBody = buf.toString('utf8');
+  }
+}));
+
+// Handle JSON parsing errors
+app.use((error: any, req: any, res: any, next: any) => {
+  if (error instanceof SyntaxError && 'body' in error) {
+    console.error('=== JSON Parse Error ===');
+    console.error('Error:', error.message);
+    console.error('Raw body:', req.rawBody);
+    console.error('Content-Type:', req.headers['content-type']);
+    
+    return res.status(400).json({ 
+      error: 'Invalid JSON format',
+      details: error.message,
+      rawBody: req.rawBody?.substring(0, 200) + (req.rawBody?.length > 200 ? '...' : '')
+    });
+  }
+  next();
+});
 
 // Static folder
 app.use(express.static(path));
@@ -612,18 +634,36 @@ app.get("/provider/status", async (req: Request, res: Response) => {
 
 /* -------------------- WhatsApp Actions Endpoints -------------------- */
 
-// Send WhatsApp Text Message
+// Send WhatsApp Text Message (with JSON error handling)
 app.post("/action/send-whatsapp-text", async (req: Request, res: Response) => {
-  const { number, message, instance_id, access_token, type = "text" } = req.body;
-  
-  if (!number || !message || !instance_id || !access_token) {
-    return res.status(400).json({ error: "Missing required fields" });
-  }
+  console.log('=== WhatsApp Text API Called ===');
+  console.log('Headers:', req.headers);
+  console.log('Raw Body:', JSON.stringify(req.body, null, 2));
   
   try {
-    const result = await sendWhatsAppMessage(number, message, access_token, instance_id, type);
+    const { number, message, instance_id, access_token, type = "text" } = req.body;
+    
+    if (!number || !message || !instance_id || !access_token) {
+      console.log('Missing fields:', { number: !!number, message: !!message, instance_id: !!instance_id, access_token: !!access_token });
+      return res.status(400).json({ 
+        error: "Missing required fields",
+        received: { number: !!number, message: !!message, instance_id: !!instance_id, access_token: !!access_token }
+      });
+    }
+    
+    // Clean message to remove potential control characters
+    const cleanMessage = message.replace(/[\x00-\x1F\x7F-\x9F]/g, '');
+    const cleanNumber = number.replace(/[^\d+]/g, '');
+    
+    console.log('Cleaned data:', { cleanNumber, cleanMessage: cleanMessage.substring(0, 50) + '...' });
+    
+    const result = await sendWhatsAppMessage(cleanNumber, cleanMessage, access_token, instance_id, type);
+    
+    console.log('WhatsApp result:', result);
     res.json(result);
+    
   } catch (error: any) {
+    console.error('WhatsApp text API error:', error);
     res.status(500).json({ error: error.message });
   }
 });
