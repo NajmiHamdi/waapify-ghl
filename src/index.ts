@@ -485,42 +485,72 @@ app.get("/api/phone-numbers", async (req: Request, res: Response) => {
   }
 });
 
-/* -------------------- SMS Override Endpoint (Custom Conversation Provider) -------------------- */
-app.post("/api/send-sms", async (req: Request, res: Response) => {
-  const { to, message, locationId, companyId } = req.body;
+/* -------------------- Conversation Provider Webhook (GHL Outbound Messages) -------------------- */
+app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
+  console.log("=== Conversation Provider Webhook Received ===", JSON.stringify(req.body, null, 2));
   
-  if (!to || !message || !locationId) {
-    return res.status(400).json({ error: "Missing required fields: to, message, locationId" });
+  const { contactId, locationId, type, phone, message, messageId } = req.body;
+  
+  if (!contactId || !locationId || !type) {
+    return res.status(400).json({ error: "Missing required fields: contactId, locationId, type" });
+  }
+  
+  // Only handle SMS type for now
+  if (type !== "SMS") {
+    return res.status(400).json({ error: "Only SMS type supported" });
+  }
+  
+  if (!phone || !message) {
+    return res.status(400).json({ error: "Missing phone or message for SMS" });
   }
   
   try {
+    // Find installation by locationId
+    const installations = Storage.getAll();
+    const installation = installations.find(inst => inst.locationId === locationId);
+    
+    if (!installation) {
+      return res.status(400).json({ error: "Installation not found for location" });
+    }
+    
     // Get Waapify configuration for this location
-    const waapifyConfig = Storage.getWaapifyConfig(companyId, locationId);
+    const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, locationId);
     if (!waapifyConfig) {
       return res.status(400).json({ error: "Waapify not configured for this location" });
     }
     
-    // Send via Waapify instead of SMS
+    // Send via Waapify WhatsApp
     const whatsappResult = await sendWhatsAppMessage(
-      to,
+      phone,
       message,
       waapifyConfig.accessToken,
       waapifyConfig.instanceId
     );
     
     if (whatsappResult.success) {
+      console.log(`✅ WhatsApp message sent successfully to ${phone}`);
       res.json({
         success: true,
-        messageId: whatsappResult.messageId,
+        messageId: whatsappResult.messageId || messageId,
         provider: "waapify",
-        deliveredVia: "whatsapp"
+        deliveredVia: "whatsapp",
+        status: "sent"
       });
     } else {
-      res.status(500).json({ error: whatsappResult.error });
+      console.error(`❌ WhatsApp send failed:`, whatsappResult.error);
+      res.status(500).json({ 
+        success: false,
+        error: whatsappResult.error,
+        messageId: messageId
+      });
     }
   } catch (error: any) {
-    console.error("SMS override error:", error);
-    res.status(500).json({ error: error.message });
+    console.error("Conversation provider webhook error:", error);
+    res.status(500).json({ 
+      success: false,
+      error: error.message,
+      messageId: messageId
+    });
   }
 });
 
