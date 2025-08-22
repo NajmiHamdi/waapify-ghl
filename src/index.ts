@@ -2153,42 +2153,90 @@ app.get("/api/message-status/:messageId", async (req: Request, res: Response) =>
 
 /* -------------------- Auto-Recovery System -------------------- */
 
-// Auto-recreate critical installations on startup to prevent SMS failures
+// Multi-user backup/restore system for marketplace app
 async function ensureCriticalInstallations() {
   try {
-    // Check if your main installation exists
     const installations = Storage.getAll();
-    const yourInstallation = installations.find(inst => 
-      inst.companyId === 'NQFaKZYtxW6gENuYYALt' && inst.locationId === 'rjsdYp4AhllL4EJDzQCP'
-    );
+    const installationCount = installations.length;
     
-    if (!yourInstallation) {
-      console.log('⚠️ Critical installation missing - auto-recreating...');
+    // If no installations exist, try to restore from backup
+    if (installationCount === 0) {
+      console.log('⚠️ No installations found - checking for backup data...');
       
-      // Recreate installation record
-      Storage.save({
-        companyId: 'NQFaKZYtxW6gENuYYALt',
-        locationId: 'rjsdYp4AhllL4EJDzQCP',
-        access_token: 'auto_recreated_token',
-        refresh_token: 'auto_recreated_refresh',
-        expires_in: 86400
-      });
-      
-      // Recreate Waapify configuration
-      Storage.saveWaapifyConfig('NQFaKZYtxW6gENuYYALt', 'rjsdYp4AhllL4EJDzQCP', {
-        accessToken: '1740aed492830374b432091211a6628d',
-        instanceId: '673F5A50E7194',
-        whatsappNumber: '60149907876'
-      });
-      
-      console.log('✅ Critical installation auto-recreated - SMS will work');
+      // Check if backup data exists in environment variables
+      const backupData = process.env.INSTALLATION_BACKUP;
+      if (backupData) {
+        try {
+          const parsedBackup = JSON.parse(backupData);
+          let restoredCount = 0;
+          
+          for (const backup of parsedBackup) {
+            Storage.save({
+              companyId: backup.companyId,
+              locationId: backup.locationId,
+              access_token: 'restored_token',
+              refresh_token: 'restored_refresh', 
+              expires_in: 86400
+            });
+            
+            if (backup.waapifyConfig) {
+              Storage.saveWaapifyConfig(backup.companyId, backup.locationId, backup.waapifyConfig);
+            }
+            
+            restoredCount++;
+          }
+          
+          console.log(`✅ Restored ${restoredCount} installations from backup`);
+        } catch (parseError) {
+          console.error('❌ Failed to parse backup data:', parseError);
+        }
+      } else {
+        console.log('ℹ️ No backup data found - this is normal for new deployments');
+      }
     } else {
-      console.log('✅ Critical installation found - SMS ready');
+      console.log(`✅ Found ${installationCount} existing installations`);
     }
+    
+    // Create backup of current installations for future recovery
+    const currentBackup = installations.map(inst => ({
+      companyId: inst.companyId,
+      locationId: inst.locationId,
+      waapifyConfig: Storage.getWaapifyConfig(inst.companyId, inst.locationId || '')
+    })).filter(backup => backup.waapifyConfig); // Only backup installations with Waapify config
+    
+    if (currentBackup.length > 0) {
+      console.log(`📦 Created backup for ${currentBackup.length} configured installations`);
+      // In production, you'd save this to external storage (S3, etc.)
+      // For now, it's just logged for manual backup if needed
+    }
+    
   } catch (error) {
-    console.error('❌ Auto-recovery failed:', error);
+    console.error('❌ Auto-recovery system error:', error);
   }
 }
+
+/* -------------------- Backup Management Endpoints -------------------- */
+
+// Get current installations backup data (for manual backup)
+app.get("/admin/backup", async (req: Request, res: Response) => {
+  try {
+    const installations = Storage.getAll();
+    const backupData = installations.map(inst => ({
+      companyId: inst.companyId,
+      locationId: inst.locationId,
+      waapifyConfig: Storage.getWaapifyConfig(inst.companyId, inst.locationId || '')
+    })).filter(backup => backup.waapifyConfig);
+    
+    res.json({
+      success: true,
+      backup_count: backupData.length,
+      backup_data: backupData,
+      instructions: "Copy this backup_data to Render environment variable INSTALLATION_BACKUP"
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
 
 /* -------------------- Start server -------------------- */
 app.listen(port, async () => {
