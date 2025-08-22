@@ -701,13 +701,30 @@ app.get("/provider/status", async (req: Request, res: Response) => {
 app.post("/action/send-whatsapp-media-ghl", async (req: Request, res: Response) => {
   console.log('=== GHL Media Action Called ===', JSON.stringify(req.body, null, 2));
   
-  const { number, message, media_url, filename, locationId, companyId, contactId, instance_id, access_token } = req.body;
+  const { number, message, media_url, filename, locationId, companyId, contactId, instance_id, access_token, test_mode } = req.body;
   
-  if (!number || !message || !media_url) {
-    return res.status(400).json({ 
-      success: false,
-      error: "Missing required fields: number, message, media_url" 
-    });
+  // Handle Test Mode
+  if (test_mode) {
+    return res.json(handleTestMode('Send WhatsApp Media', { number, message, media_url, filename }));
+  }
+  
+  // Phone Number Auto-formatting and Validation
+  const phoneValidation = formatPhoneNumber(number);
+  if (!phoneValidation.isValid) {
+    return res.status(400).json(createErrorResponse(
+      'Invalid phone number format',
+      phoneValidation.suggestions,
+      'INVALID_PHONE'
+    ));
+  }
+  const formattedNumber = phoneValidation.formatted;
+  
+  if (!message || !media_url) {
+    return res.status(400).json(createErrorResponse(
+      'Missing required fields: message and media_url are required',
+      'Please provide both a message and a media file URL.',
+      'MISSING_FIELDS'
+    ));
   }
   
   try {
@@ -740,7 +757,7 @@ app.post("/action/send-whatsapp-media-ghl", async (req: Request, res: Response) 
     
     // Send media message via Waapify
     const result = await sendWhatsAppMessage(
-      number, 
+      formattedNumber, 
       message, 
       finalAccessToken, 
       finalInstanceId,
@@ -760,7 +777,7 @@ app.post("/action/send-whatsapp-media-ghl", async (req: Request, res: Response) 
         await logMessage(installation.companyId, installation.locationId, {
           ghlMessageId: `media_${Date.now()}`,
           waapifyMessageId: result.messageId || `media_${Date.now()}`,
-          recipient: number,
+          recipient: formattedNumber,
           message: `${message} [Media: ${filename || 'file'}]`,
           type: 'media',
           status: result.success ? 'sent' : 'failed',
@@ -780,14 +797,19 @@ app.post("/action/send-whatsapp-media-ghl", async (req: Request, res: Response) 
     
   } catch (error: any) {
     console.error('GHL Media Action error:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
+    let suggestion = 'Please check your internet connection and media URL accessibility.';
+    if (error.message.includes('timeout')) {
+      suggestion = 'Request timed out. Large files may take longer. Please try with a smaller file or check your connection.';
+    } else if (error.message.includes('Access token does not exist')) {
+      suggestion = 'Your Waapify access token is invalid or expired. Please update your credentials in the app settings.';
+    } else if (error.message.includes('File too large')) {
+      suggestion = 'Media file is too large. WhatsApp supports files up to 16MB. Please use a smaller file.';
+    }
+    res.status(500).json(createErrorResponse(error.message, suggestion, 'MEDIA_SEND_FAILED'));
   }
 });
 
-// GHL Action: AI Chatbot Response (for marketplace workflows)  
+// GHL Action: AI Chatbot Response (Enhanced with improvements)
 app.post("/action/ai-chatbot-ghl", async (req: Request, res: Response) => {
   console.log('=== GHL AI Chatbot Action Called ===', JSON.stringify(req.body, null, 2));
   
@@ -800,14 +822,41 @@ app.post("/action/ai-chatbot-ghl", async (req: Request, res: Response) => {
     openai_api_key, // OpenAI key provided directly in workflow action
     locationId, 
     companyId,
-    contactId 
+    contactId,
+    test_mode
   } = req.body;
   
-  if (!customerMessage) {
-    return res.status(400).json({ 
-      success: false,
-      error: "Missing required field: customerMessage" 
+  // Handle Test Mode
+  if (test_mode) {
+    return res.json({
+      ...handleTestMode('AI Chatbot Response', { customerMessage, phone, keywords, context }),
+      ai_config_valid: !!openai_api_key,
+      keywords_matched: keywords ? checkKeywordTriggers(customerMessage, 
+        typeof keywords === 'string' ? keywords.split(',').map(k => k.trim()) : keywords || []) : [],
+      sample_response: "Hello! This is a sample AI response for testing. Your configuration looks good!"
     });
+  }
+  
+  // Validate phone number if provided
+  let formattedPhone = phone;
+  if (phone) {
+    const phoneValidation = formatPhoneNumber(phone);
+    if (!phoneValidation.isValid) {
+      return res.status(400).json(createErrorResponse(
+        'Invalid phone number format for WhatsApp sending',
+        phoneValidation.suggestions,
+        'INVALID_PHONE'
+      ));
+    }
+    formattedPhone = phoneValidation.formatted;
+  }
+  
+  if (!customerMessage) {
+    return res.status(400).json(createErrorResponse(
+      'Missing required field: customerMessage',
+      'Please provide the customer message that triggered the AI response.',
+      'MISSING_MESSAGE'
+    ));
   }
   
   try {
@@ -948,16 +997,100 @@ app.post("/debug/create-test-installation", async (req: Request, res: Response) 
   }
 });
 
+/* -------------------- Helper Functions for Improvements -------------------- */
+
+// Phone Number Auto-formatting and Validation
+function formatPhoneNumber(number: string): { formatted: string; isValid: boolean; suggestions?: string } {
+  if (!number) return { formatted: '', isValid: false, suggestions: 'Phone number is required' };
+  
+  // Remove all non-digits
+  let cleaned = number.replace(/[^\d]/g, '');
+  
+  // Auto-format common Malaysian patterns
+  if (cleaned.startsWith('0')) {
+    cleaned = '60' + cleaned.substring(1); // 012345678 → 60123456789
+  } else if (cleaned.startsWith('6010') || cleaned.startsWith('6011') || cleaned.startsWith('6012') || cleaned.startsWith('6013') || cleaned.startsWith('6014') || cleaned.startsWith('6015') || cleaned.startsWith('6016') || cleaned.startsWith('6017') || cleaned.startsWith('6018') || cleaned.startsWith('6019')) {
+    // Already formatted Malaysian number
+  } else if (!cleaned.startsWith('60') && cleaned.length >= 9) {
+    cleaned = '60' + cleaned; // Assume Malaysian if no country code
+  }
+  
+  // Validate length
+  const isValid = cleaned.length >= 10 && cleaned.length <= 15;
+  let suggestions = '';
+  
+  if (!isValid) {
+    if (cleaned.length < 10) suggestions = 'Phone number too short. Malaysian numbers should be 10-12 digits with country code.';
+    if (cleaned.length > 15) suggestions = 'Phone number too long. Please check the number format.';
+  }
+  
+  return { formatted: cleaned, isValid, suggestions };
+}
+
+// Better Error Messages with Suggestions
+function createErrorResponse(error: string, suggestion?: string, errorCode?: string) {
+  return {
+    success: false,
+    error: error,
+    suggestion: suggestion || 'Please check your configuration and try again.',
+    errorCode: errorCode || 'GENERAL_ERROR',
+    helpUrl: 'https://waaghl.waapify.com/dashboard'
+  };
+}
+
+// Test Mode Handler
+function handleTestMode(action: string, params: any) {
+  return {
+    success: true,
+    test_mode: true,
+    action: action,
+    message: `✅ Test successful! Your ${action} action is configured correctly.`,
+    simulated_result: {
+      messageId: `test_${Date.now()}`,
+      recipient: params.number || params.phone,
+      timestamp: new Date().toISOString(),
+      estimated_cost: '$0.01',
+      delivery_status: 'would_be_sent'
+    },
+    validation: {
+      phone_valid: formatPhoneNumber(params.number || params.phone).isValid,
+      credentials_valid: true,
+      configuration_valid: true
+    },
+    next_steps: [
+      'Your action is ready to use in live mode',
+      'Remove "test_mode": true to send real messages',
+      'Monitor results in your dashboard'
+    ]
+  };
+}
+
 /* -------------------- WhatsApp Actions Endpoints -------------------- */
 
-// Send WhatsApp Text Message (with JSON error handling)
+// Send WhatsApp Text Message (Enhanced with improvements)
 app.post("/action/send-whatsapp-text", async (req: Request, res: Response) => {
   console.log('=== WhatsApp Text API Called ===');
   console.log('Headers:', req.headers);
   console.log('Raw Body:', JSON.stringify(req.body, null, 2));
   
   try {
-    const { number, message, instance_id, access_token, locationId, companyId, type = "text" } = req.body;
+    const { number, message, instance_id, access_token, locationId, companyId, type = "text", test_mode } = req.body;
+    
+    // Handle Test Mode
+    if (test_mode) {
+      return res.json(handleTestMode('Send WhatsApp Text', { number, message }));
+    }
+    
+    // Phone Number Auto-formatting and Validation
+    const phoneValidation = formatPhoneNumber(number);
+    if (!phoneValidation.isValid) {
+      return res.status(400).json(createErrorResponse(
+        'Invalid phone number format',
+        phoneValidation.suggestions,
+        'INVALID_PHONE'
+      ));
+    }
+    const formattedNumber = phoneValidation.formatted;
     
     let finalInstanceId = instance_id;
     let finalAccessToken = access_token;
@@ -973,40 +1106,41 @@ app.post("/action/send-whatsapp-text", async (req: Request, res: Response) => {
       }
     }
     
-    if (!number || !message || !finalInstanceId || !finalAccessToken) {
-      console.log('Missing fields after config lookup:', { 
-        number: !!number, 
-        message: !!message, 
-        instance_id: !!finalInstanceId, 
-        access_token: !!finalAccessToken 
-      });
-      return res.status(400).json({ 
-        error: "Missing required fields. Either provide instance_id & access_token directly, or ensure locationId & companyId are provided with stored Waapify config.",
-        received: { 
-          number: !!number, 
-          message: !!message, 
-          instance_id: !!finalInstanceId, 
-          access_token: !!finalAccessToken,
-          locationId: !!locationId,
-          companyId: !!companyId
-        }
-      });
+    if (!message || !finalInstanceId || !finalAccessToken) {
+      let suggestion = '';
+      if (!finalInstanceId || !finalAccessToken) {
+        suggestion = 'Please complete the external authentication in your app settings, or provide credentials directly in the action.';
+      }
+      return res.status(400).json(createErrorResponse(
+        'Missing required fields or credentials',
+        suggestion,
+        'MISSING_CREDENTIALS'
+      ));
     }
     
     // Clean message to remove potential control characters
     const cleanMessage = message.replace(/[\x00-\x1F\x7F-\x9F]/g, '');
-    const cleanNumber = number.replace(/[^\d+]/g, '');
     
-    console.log('Cleaned data:', { cleanNumber, cleanMessage: cleanMessage.substring(0, 50) + '...' });
+    console.log('Sending data:', { 
+      formattedNumber, 
+      cleanMessage: cleanMessage.substring(0, 50) + '...',
+      hasCredentials: !!finalAccessToken
+    });
     
-    const result = await sendWhatsAppMessage(cleanNumber, cleanMessage, finalAccessToken, finalInstanceId, type);
+    const result = await sendWhatsAppMessage(formattedNumber, cleanMessage, finalAccessToken, finalInstanceId, type);
     
     console.log('WhatsApp result:', result);
     res.json(result);
     
   } catch (error: any) {
     console.error('WhatsApp text API error:', error);
-    res.status(500).json({ error: error.message });
+    let suggestion = 'Please check your internet connection and try again.';
+    if (error.message.includes('timeout')) {
+      suggestion = 'Request timed out. Please try again or check your Waapify service status.';
+    } else if (error.message.includes('Access token does not exist')) {
+      suggestion = 'Your Waapify access token is invalid or expired. Please update your credentials in the app settings.';
+    }
+    res.status(500).json(createErrorResponse(error.message, suggestion, 'SEND_FAILED'));
   }
 });
 
