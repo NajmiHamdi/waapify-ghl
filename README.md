@@ -1,193 +1,314 @@
-# GoHighLevel Marketplace App Server
+# 📱 Waapify-GHL: WhatsApp Integration for GoHighLevel
 
-This is an Express.js server template for interacting with the GoHighLevel (GHL) API. It demonstrates how to set up an Express server to handle authorization and make GET requests to the GoHighLevel API.
+Convert SMS to WhatsApp messages seamlessly in your GoHighLevel CRM with AI chatbot support, media messaging, and automated workflows.
 
-## Table of Contents
+![WhatsApp + GHL Integration](https://img.shields.io/badge/WhatsApp-GHL-25D366?style=for-the-badge&logo=whatsapp)
+![Node.js](https://img.shields.io/badge/Node.js-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)
+![MySQL](https://img.shields.io/badge/MySQL-4479A1?style=for-the-badge&logo=mysql&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-007ACC?style=for-the-badge&logo=typescript&logoColor=white)
 
-- [Prerequisites](#prerequisites)
-- [Installation](#installation)
-- [Usage](#usage)
-- [Routes](#routes)
-- [SSO](#sso)
-- [Vue 3 Web Application](#vue-3-web-application)
-- [How to Deploy on Render](#how-to-deploy-on-render)
-- [License](#license)
+## 🚀 Features
 
-## Prerequisites
+### 📬 **Core Messaging**
+- ✅ **SMS to WhatsApp Conversion** - Automatically send WhatsApp messages when SMS is triggered in GHL
+- ✅ **Media Support** - Send images, documents, PDFs through WhatsApp
+- ✅ **Phone Auto-formatting** - Malaysian number formatting (0123456789 → 60123456789)
+- ✅ **Rate Limiting** - Prevent WhatsApp account bans with intelligent rate limiting
+- ✅ **Message Logging** - Track all sent messages with delivery status
 
-Before you get started, make sure you have the following prerequisites:
+### 🤖 **AI Chatbot Integration**
+- ✅ **ChatGPT Integration** - Intelligent auto-responses with OpenAI GPT
+- ✅ **Keyword Triggers** - Set custom keywords to trigger AI responses
+- ✅ **Custom Personas** - Define AI personality and context per location
+- ✅ **User API Keys** - Each user uses their own OpenAI API key
 
-- Node.js installed on your machine.
+### ⚙️ **GHL Workflow Actions**
+- ✅ **Send WhatsApp Message** - Direct workflow action
+- ✅ **Send WhatsApp Media** - Send files/images in workflows  
+- ✅ **AI Generate & Send** - Generate AI response and send to WhatsApp
+- ✅ **Check WhatsApp Number** - Validate phone numbers
+- ✅ **Test Mode** - Test without sending real messages
 
-## Installation
+### 🏢 **Multi-User & Scalability**
+- ✅ **Per-Location Configuration** - Each GHL location has separate Waapify credentials
+- ✅ **MySQL Database** - Persistent data storage, no more lost configurations
+- ✅ **Auto-Recovery System** - Automatically restore lost installations
+- ✅ **Production Ready** - Deployed with RunCloud, PM2, and SSL
 
-1. Clone this repository to your local machine:
+## 🛠️ Installation & Setup
 
-   ```bash
-   git clone git@github.com:GoHighLevel/ghl-marketplace-app-template.git
-   cd ghl-marketplace-app-template
-   ```
+### Prerequisites
+- GoHighLevel Developer Account
+- Waapify Account ([Get API access](https://waapify.com))
+- RunCloud Hosting (recommended) or any Node.js hosting
+- MySQL Database
+- OpenAI API Key (for AI features)
 
-2. Install the project dependencies:
+### Quick Start
 
-   ```bash
-   npm install
-   ```
-
-3. Set up your environment variables:
-
-   Create a `.env` file by copying .env.example in the project root directory and add the following variables:
-
-   ```
-        GHL_APP_CLIENT_ID=<CLIENT_ID> #Change it to you apps client id
-        GHL_APP_CLIENT_SECRET=<CLIENT_SECRET> #Change it to your apps secret
-   ```
-
-4. Start the dev Express server:
-
-   ```bash
-   npm run dev
-   ```
-
-   Your server will now be running at `http://localhost:3000` (or your specified port).
-
-## Usage
-
-This Express server template provides routes for handling authorization and making API calls to GoHighLevel. Here's how you can use it:
-
-### Authorization
-
-To setup the authorization process, you can add the below URL to redirect url section on Your marketplace app:
-
-```
-http://localhost:3000/authorize-handler
+1. **Clone Repository**
+```bash
+git clone https://github.com/NajmiHamdi/waapify-ghl.git
+cd waapify-ghl
+npm install
 ```
 
-After obtaining the Installation details from GHL you can make changes in code to redirect user to anywhere you would like user journey to continue.
-
-### Making API Calls
-
-For showcasing use of obtained installation i have created two example api call.
-
-#### Example API Call
-
-This dummy api calls GHL user api to fetch users for a specific company. Note: Your app must have users read scope added to you app.
-To make an example API call to GoHighLevel, access the following route:
-
-```
-http://localhost:3000/example-api-call?companyId=your-company-id
+2. **Environment Setup**
+```bash
+cp .env.production .env
+# Edit .env with your credentials
 ```
 
-Replace `your-company-id` with the company ID for which you want to make the API call. Make sure your aop is installed for that specific company. This route demonstrates making a GET request to the GoHighLevel API using the `ghl.requests` method.
+3. **Database Setup**
+- Import `database/schema.sql` to your MySQL database
+- Update DB credentials in `.env`
 
-#### Example API Call with Location
-
-This is another example where we are making call to contacts API. This flow searches for installation of the location you are trying to make call
-To make an example API call for a specific location, access the following route:
-
+4. **Deploy to RunCloud**
+```bash
+# Follow the complete guide in RUNCLOUD_SETUP.md
+npm run build
+npm run pm2:start
 ```
-http://localhost:3000/example-api-call-location?companyId=your-company-id&locationId=your-location-id
+
+5. **Configure GHL Marketplace**
+- Add your domain to GHL marketplace app settings
+- Configure OAuth redirect URI
+- Install the app in your GHL account
+
+## 📋 Detailed Setup Guides
+
+### 🚀 [RunCloud Deployment Guide](RUNCLOUD_SETUP.md)
+Complete step-by-step instructions for deploying to RunCloud with auto-git, database setup, and SSL configuration.
+
+### 🔗 [GHL Marketplace Integration](DOCS_GHL.md)
+Comprehensive guide for setting up the GoHighLevel marketplace app, OAuth flow, and workflow actions.
+
+### 📱 [Waapify API Documentation](WAAPIFY_FULL_API_DOCS.md)
+Complete Waapify API reference for WhatsApp messaging, media, and instance management.
+
+## ⚙️ Configuration
+
+### Environment Variables
+```bash
+# Server
+NODE_ENV=production
+PORT=3000
+
+# Database
+DB_HOST=localhost
+DB_USER=your_db_user
+DB_PASSWORD=your_db_password
+DB_NAME=waapify_ghl
+
+# GHL OAuth
+GHL_CLIENT_ID=your_ghl_client_id
+GHL_CLIENT_SECRET=your_ghl_client_secret
+GHL_REDIRECT_URI=https://yourdomain.com/authorize-handler
 ```
 
-Replace `your-company-id` and `your-location-id` with the respective company and location IDs. This route checks if an installation exists for the location, retrieves the location token if needed, and then makes the API request.
+### Waapify Configuration (Per Location)
+- **Access Token**: Your Waapify API access token
+- **Instance ID**: WhatsApp instance identifier
+- **Phone Number**: WhatsApp business number
 
-## Routes
+### AI Chatbot Configuration (Optional)
+- **OpenAI API Key**: User's own OpenAI API key
+- **Keywords**: Comma-separated trigger words
+- **Context**: AI assistant background context
+- **Persona**: AI personality and tone
 
-- `/authorize-handler`: Handles GoHighLevel authorization flow.
-- `/example-api-call`: Makes an example API call to GoHighLevel for a company.
-- `/example-api-call-location`: Makes an example API call to GoHighLevel for a specific location within a company.
-- `/`: Serves the main HTML file and static assets of your web application.
-- `Webhook Handling`: A route (/example-webhook-handler) has been added to handle incoming POST requests, likely for handling webhooks. It logs the body of the incoming request. You can add it tou your webhook URL section under your app to start receiving requests.
-- `/decrypt-sso`: A route (/decrypt-sso) has been added to decrypt sso request response received from parent app (Please refer UI app for more details).
+## 🚀 Usage
 
-## SSO
+### In GoHighLevel Workflows
 
-Single Sign-On (SSO) is a centralized authentication method that streamlines access to various applications or services with a single set of login credentials. In the context of GoHighLevel, their SSO functionality currently supports integration exclusively with custom pages. When you implement SSO with custom pages through your application's UI, accessible via an iframe, you have the capability to request encrypted SSO details. These encrypted details can be decrypted using the SSOKey provided by GoHighLevel's marketplace, and an example API for this purpose has been included in the repository for straightforward integration.
+1. **Send WhatsApp Message**
+   - Action: "Send WhatsApp Message"
+   - Fields: Phone, Message
+   - Auto-uses stored Waapify credentials
 
-## Vue 3 Web Application
+2. **Send WhatsApp Media**
+   - Action: "Send WhatsApp Media"  
+   - Fields: Phone, Message, File URL, Filename
 
-This project includes a Vue 3 web application located in the `ui` folder under the `src` directory. The Vue application is designed to be served by the Express.js server.You can use this UI section to build custom pages. To work with the Vue 3 application, follow these steps:
+3. **AI Generate & Send**
+   - Action: "AI Generate & Send WhatsApp"
+   - Fields: Phone, Customer Message, Context, Keywords
 
-1. Navigate to the `ui` folder:
+### Direct API Usage
 
-   ```bash
-   cd src/ui
-   ```
+```javascript
+// Send text message
+POST /api/send-message
+{
+  "number": "60123456789",
+  "message": "Hello from GHL!",
+  "locationId": "your_location_id",
+  "companyId": "your_company_id"
+}
 
-2. Install the Vue application dependencies:
+// Send media message
+POST /api/send-media
+{
+  "number": "60123456789", 
+  "message": "Check out this image",
+  "media_url": "https://example.com/image.jpg",
+  "filename": "image.jpg",
+  "locationId": "your_location_id",
+  "companyId": "your_company_id"
+}
+```
 
-   ```bash
-   npm install
-   ```
+## 🤖 AI Chatbot Features
 
-3. Build the Vue application for production (if not already built):
+### Auto-Response System
+- Monitors incoming WhatsApp messages
+- Triggers on configured keywords
+- Generates contextual responses using ChatGPT
+- Sends responses automatically via WhatsApp
 
-   ```bash
-   npm run build
-   ```
+### Keyword Configuration
+```javascript
+// Example keywords setup
+{
+  "keywords": "price,cost,pricing,how much,hours,help,support",
+  "context": "You are a helpful customer service representative for ABC Company",
+  "persona": "friendly, professional, and knowledgeable"
+}
+```
 
-   This will generate optimized static files in the `dist` directory, which will be served by the Express server.
+## 📊 Monitoring & Analytics
 
-4. Start the Express server (if not already running):
+### Message Tracking
+- All sent messages logged to database
+- Delivery status tracking
+- Error message logging
+- Usage statistics per location
 
-   ```bash
-   cd ../../   # Navigate back to the project root directory
-   npm start
-   ```
+### Admin Endpoints
+```bash
+# Get message logs
+GET /api/messages?companyId=xxx&locationId=xxx
 
-   Your Vue 3 application will be served alongside the API functionality at `http://localhost:3000/`. You can access the Vue application by visiting this URL in your web browser.
+# Get usage statistics  
+GET /api/stats?companyId=xxx
 
-## How to Deploy on Render
+# Backup installations
+GET /admin/backup
+```
 
-Follow these steps to deploy your GoHighLevel Marketplace App Server on Render:
+## 🛡️ Security Features
 
-1. **Sign Up on Render**:
+- **Rate Limiting**: Prevents WhatsApp API abuse
+- **OAuth Authentication**: Secure GHL integration
+- **API Key Isolation**: Each user's credentials stored separately
+- **Error Handling**: Comprehensive error logging and recovery
+- **Auto-Recovery**: Automatic restoration of lost configurations
 
-   Create a Render account at [Render](https://render.com/).
+## 📱 Supported Features
 
-2. **Create an new Web service**:
+### WhatsApp Message Types
+- ✅ Text messages
+- ✅ Images (JPG, PNG, GIF)
+- ✅ Documents (PDF, DOC, etc.)
+- ✅ Media with captions
 
-   - Log in to Render.
-   - Click "Web Service" option to create new web service
+### GHL Integration
+- ✅ SMS replacement in workflows
+- ✅ Contact synchronization
+- ✅ Conversation forwarding
+- ✅ Custom workflow actions
+- ✅ Marketplace app compliance
 
-3. **Connect Your Repository**:
+### Waapify API Coverage
+- ✅ Send text messages
+- ✅ Send media messages
+- ✅ Check phone number validity
+- ✅ Instance management
+- ✅ Connection status monitoring
 
-   - Connect your github account
-   - Select your Git repository with the app's code.
+## 🔧 Development
 
-4. **Configure Build and Start Commands**:
+### Local Development
+```bash
+npm run dev          # Start development server
+npm run build        # Build for production
+npm run production   # Run production build
+npm run pm2:start    # Start with PM2
+npm run pm2:logs     # View logs
+```
 
-   - Specify build and start commands:
-     - Build Command: `npm install && npm run build`
-     - Start Command: `npm start`
+### Database Schema
+The app uses 5 main tables:
+- `installations` - GHL OAuth data
+- `waapify_configs` - Waapify credentials per location
+- `message_logs` - Message tracking
+- `ai_configs` - AI chatbot settings
+- `rate_limits` - API usage limits
 
-5. **Set Environment Variables**:
+## 🚨 Troubleshooting
 
-   - In the environment settings, add:
-     - `GHL_APP_CLIENT_ID`: Your GoHighLevel app's client ID.
-     - `GHL_APP_CLIENT_SECRET`: Your GoHighLevel app's client secret.
-     - `GHL_API_DOMAIN`: https://services.leadconnectorhq.com
-     - `GHL_APP_SSO_KEY`: Your app's active SSO Key.
+### Common Issues
 
-6. **Deploy Your App**:
+1. **Messages Not Sending**
+   - Check Waapify credentials in external auth
+   - Verify phone number format
+   - Check rate limits in logs
 
-   Your app deployment would automatically start once everything configured.
+2. **Database Connection Errors**
+   - Verify MySQL credentials
+   - Check if database exists
+   - Import schema.sql if needed
 
-7. **Monitor Deployment**:
+3. **GHL OAuth Issues**
+   - Update redirect URI in GHL marketplace
+   - Check client ID/secret configuration
+   - Verify domain matches exactly
 
-   Watch the progress in the Render dashboard in Logs section.
+4. **AI Chatbot Not Responding**
+   - Check OpenAI API key validity
+   - Verify keyword configuration
+   - Check AI config enabled status
 
-8. **Access Your App**:
+### Logs & Debugging
+```bash
+# Application logs
+npm run pm2:logs
 
-   Once deployed, access your app using the provided URL.
+# Database connection test
+npm run test-db
 
-9. **Troubleshooting**:
+# Waapify connection test
+curl -X POST https://yourdomain.com/api/test-waapify
+```
 
-    Refer to Render's docs or contact support for help.
+## 🤝 Contributing
 
-Your GoHighLevel Marketplace App Server is now live on Render.
+1. Fork the repository
+2. Create feature branch (`git checkout -b feature/new-feature`)
+3. Commit changes (`git commit -m 'Add new feature'`)
+4. Push to branch (`git push origin feature/new-feature`)
+5. Open Pull Request
 
+## 📄 License
 
-## License
+MIT License - see [LICENSE](LICENSE) file for details.
 
-This project is licensed under the [MIT License](LICENSE).
+## 🆘 Support
+
+- **Documentation**: Check the `/docs` folder for detailed guides
+- **Issues**: Report bugs on [GitHub Issues](https://github.com/NajmiHamdi/waapify-ghl/issues)
+- **API Questions**: Refer to [Waapify API Docs](WAAPIFY_FULL_API_DOCS.md)
+- **GHL Integration**: See [GHL Documentation](DOCS_GHL.md)
+
+## 🙏 Acknowledgments
+
+- [GoHighLevel](https://gohighlevel.com) for the amazing CRM platform
+- [Waapify](https://waapify.com) for reliable WhatsApp API services
+- [OpenAI](https://openai.com) for GPT integration
+- [RunCloud](https://runcloud.io) for excellent hosting platform
+
+---
+
+**Made with ❤️ for the GHL Community**
+
+**Ready to transform your SMS workflows into WhatsApp conversations? Get started now! 🚀**
