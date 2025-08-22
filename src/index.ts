@@ -1,7 +1,7 @@
 import express, { Express, Request, Response } from "express";
 import dotenv from "dotenv";
 import { GHL } from "./ghl";
-import { Storage } from "./storage";
+import { Database, Installation, WaapifyConfig, AIConfig } from "./database";
 import { json } from "body-parser";
 
 // Routes
@@ -59,7 +59,7 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
   try {
     const authResult = await ghl.authorizationHandler(code as string);
 
-    const installations = Storage.getAll();
+    const installations = await Database.getAllInstallations();
     console.log("=== All installations ===", installations);
 
     // DISABLED: Popup configuration (using external auth instead)
@@ -286,18 +286,24 @@ app.post("/save-waapify-config", async (req: Request, res: Response) => {
   }
   
   try {
-    // Save Waapify config to storage
-    const installation = Storage.find(companyId);
+    // Save Waapify config to database
+    const installation = await Database.getInstallation(companyId, locationId);
     if (!installation) {
       return res.status(400).json({ error: "Installation not found" });
     }
     
-    // Extend storage to include Waapify config
-    Storage.saveWaapifyConfig(companyId, locationId, {
-      accessToken,
-      instanceId,
-      whatsappNumber
-    });
+    // Save Waapify config to database
+    const waapifyConfig: WaapifyConfig = {
+      installation_id: installation.id!,
+      company_id: companyId,
+      location_id: locationId,
+      access_token: accessToken,
+      instance_id: instanceId,
+      whatsapp_number: whatsappNumber,
+      is_active: true
+    };
+    
+    await Database.saveWaapifyConfig(waapifyConfig);
     
     // Test Waapify connection
     const testResult = await testWaapifyConnection(accessToken, instanceId);
@@ -402,11 +408,21 @@ app.post("/external-auth", async (req: Request, res: Response) => {
       const { locationId, companyId } = req.body;
       if (locationId && companyId) {
         console.log('=== Storing Waapify Config ===', { locationId, companyId, instance_id });
-        Storage.saveWaapifyConfig(companyId, locationId, {
-          accessToken: access_token,
-          instanceId: instance_id,
-          whatsappNumber: whatsapp_number || 'unknown'
-        });
+        
+        // Get installation to get the installation_id
+        const installation = await Database.getInstallation(companyId, locationId);
+        if (installation && installation.id) {
+          const waapifyConfig: WaapifyConfig = {
+            installation_id: installation.id,
+            company_id: companyId,
+            location_id: locationId,
+            access_token: access_token,
+            instance_id: instance_id,
+            whatsapp_number: whatsapp_number || 'unknown',
+            is_active: true
+          };
+          await Database.saveWaapifyConfig(waapifyConfig);
+        }
       }
       
       // Return success response for GHL with provider registration
@@ -488,7 +504,7 @@ app.get("/api/phone-numbers", async (req: Request, res: Response) => {
   
   try {
     // Get Waapify config for this location
-    const waapifyConfig = Storage.getWaapifyConfig(companyId, locationId);
+    const waapifyConfig = await Database.getWaapifyConfig(companyId, locationId);
     
     if (!waapifyConfig) {
       return res.json({
@@ -502,9 +518,9 @@ app.get("/api/phone-numbers", async (req: Request, res: Response) => {
     return res.json({
       phoneNumbers: [
         {
-          id: waapifyConfig.instanceId,
-          number: `+${waapifyConfig.whatsappNumber}`,
-          displayNumber: waapifyConfig.whatsappNumber,
+          id: waapifyConfig.instance_id,
+          number: `+${waapifyConfig.whatsapp_number}`,
+          displayNumber: waapifyConfig.whatsapp_number,
           type: "SMS",
           provider: "waapify",
           capabilities: ["SMS", "MMS"],
@@ -546,21 +562,21 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
   
   try {
     // Find installation by locationId
-    const installations = Storage.getAll();
-    const installation = installations.find(inst => inst.locationId === locationId);
+    const installations = await Database.getAllInstallations();
+    const installation = installations.find(inst => inst.location_id === locationId);
     
     if (!installation) {
       return res.status(400).json({ error: "Installation not found for location" });
     }
     
     // Get Waapify configuration for this location
-    const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, locationId);
+    const waapifyConfig = await Database.getWaapifyConfig(installation.company_id, locationId);
     if (!waapifyConfig) {
       return res.status(400).json({ error: "Waapify not configured for this location" });
     }
     
     // Check for rate limiting
-    const rateLimitCheck = await checkRateLimit(installation.companyId, locationId);
+    const rateLimitCheck = await Database.checkRateLimit(installation.company_id, locationId);
     if (!rateLimitCheck.allowed) {
       return res.status(429).json({ 
         success: false,
@@ -579,8 +595,8 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
       whatsappResult = await sendWhatsAppMessage(
         phone,
         message,
-        waapifyConfig.accessToken,
-        waapifyConfig.instanceId,
+        waapifyConfig.access_token,
+        waapifyConfig.instance_id,
         'media',
         attachment.url,
         attachment.filename
@@ -590,19 +606,18 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
       whatsappResult = await sendWhatsAppMessage(
         phone,
         message,
-        waapifyConfig.accessToken,
-        waapifyConfig.instanceId
+        waapifyConfig.access_token,
+        waapifyConfig.instance_id
       );
     }
     
-    // Update rate limit counter
-    await updateRateLimit(installation.companyId, locationId);
+    // Rate limit is automatically updated by Database.checkRateLimit
     
     if (whatsappResult.success) {
       console.log(`✅ WhatsApp message sent successfully to ${phone}`);
       
       // Log message for delivery tracking
-      await logMessage(installation.companyId, locationId, {
+      await logMessage(installation.company_id, locationId, {
         ghlMessageId: messageId,
         waapifyMessageId: whatsappResult.messageId,
         recipient: phone,
@@ -654,8 +669,8 @@ app.get("/provider/status", async (req: Request, res: Response) => {
     }
     
     // Find installation
-    const installations = Storage.getAll();
-    const installation = installations.find(inst => inst.locationId === locationId);
+    const installations = await Database.getAllInstallations();
+    const installation = installations.find(inst => inst.location_id === locationId);
     
     if (!installation) {
       return res.json({
@@ -665,7 +680,7 @@ app.get("/provider/status", async (req: Request, res: Response) => {
     }
     
     // Check Waapify config
-    const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, locationId);
+    const waapifyConfig = await Database.getWaapifyConfig(installation.company_id, locationId);
     if (!waapifyConfig) {
       return res.json({
         status: "inactive",
@@ -674,14 +689,14 @@ app.get("/provider/status", async (req: Request, res: Response) => {
     }
     
     // Test connection
-    const testResult = await testWaapifyConnection(waapifyConfig.accessToken, waapifyConfig.instanceId);
+    const testResult = await testWaapifyConnection(waapifyConfig.access_token, waapifyConfig.instance_id);
     
     res.json({
       status: testResult.success ? "active" : "error",
       provider: "waapify",
       providerName: "Waapify WhatsApp",
-      whatsappNumber: waapifyConfig.whatsappNumber,
-      instanceId: waapifyConfig.instanceId,
+      whatsappNumber: waapifyConfig.whatsapp_number,
+      instanceId: waapifyConfig.instance_id,
       lastChecked: new Date().toISOString(),
       connectionTest: testResult
     });
@@ -734,16 +749,16 @@ app.post("/action/send-whatsapp-media-ghl", async (req: Request, res: Response) 
     // If credentials not provided directly, try to get from stored config
     if ((!instance_id || !access_token) && locationId && companyId) {
       console.log('Trying to get stored Waapify config for:', { locationId, companyId });
-      const installations = Storage.getAll();
+      const installations = await Database.getAllInstallations();
       const installation = installations.find(inst => 
-        inst.locationId === locationId || inst.companyId === companyId
+        inst.location_id === locationId || inst.company_id === companyId
       );
       
       if (installation) {
-        const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, installation.locationId || '');
+        const waapifyConfig = await Database.getWaapifyConfig(installation.company_id, installation.location_id || '');
         if (waapifyConfig) {
-          finalInstanceId = finalInstanceId || waapifyConfig.instanceId;
-          finalAccessToken = finalAccessToken || waapifyConfig.accessToken;
+          finalInstanceId = finalInstanceId || waapifyConfig.instance_id;
+          finalAccessToken = finalAccessToken || waapifyConfig.access_token;
         }
       }
     }
@@ -768,13 +783,13 @@ app.post("/action/send-whatsapp-media-ghl", async (req: Request, res: Response) 
     
     // Log the message (if we have installation)
     if (locationId && companyId) {
-      const installations = Storage.getAll();
+      const installations = await Database.getAllInstallations();
       const installation = installations.find(inst => 
-        inst.locationId === locationId || inst.companyId === companyId
+        inst.location_id === locationId || inst.company_id === companyId
       );
       
-      if (installation && installation.locationId) {
-        await logMessage(installation.companyId, installation.locationId, {
+      if (installation && installation.location_id) {
+        await logMessage(installation.company_id, installation.location_id, {
           ghlMessageId: `media_${Date.now()}`,
           waapifyMessageId: result.messageId || `media_${Date.now()}`,
           recipient: formattedNumber,
@@ -884,14 +899,14 @@ app.post("/action/ai-chatbot-ghl", async (req: Request, res: Response) => {
     
     if (!userOpenAIKey) {
       // Fallback to stored API key if available
-      const installations = Storage.getAll();
+      const installations = await Database.getAllInstallations();
       const installation = installations.find(inst => 
-        inst.locationId === locationId || inst.companyId === companyId
+        inst.location_id === locationId || inst.company_id === companyId
       );
       
       if (installation) {
-        const aiConfig = Storage.getAIChatbotConfig(installation.companyId, installation.locationId || '');
-        userOpenAIKey = aiConfig?.openaiApiKey;
+        const aiConfig = await Database.getAIConfig(installation.company_id, installation.location_id || '');
+        userOpenAIKey = aiConfig?.openai_api_key;
       }
     }
     
@@ -916,25 +931,25 @@ app.post("/action/ai-chatbot-ghl", async (req: Request, res: Response) => {
     
     // Send via WhatsApp if phone provided and location configured
     if (phone && (locationId || companyId)) {
-      const installations = Storage.getAll();
+      const installations = await Database.getAllInstallations();
       const installation = installations.find(inst => 
-        inst.locationId === locationId || inst.companyId === companyId
+        inst.location_id === locationId || inst.company_id === companyId
       );
       
       if (installation) {
-        const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, installation.locationId || '');
+        const waapifyConfig = await Database.getWaapifyConfig(installation.company_id, installation.location_id || '');
         if (waapifyConfig && aiResponse.response) {
           whatsappResult = await sendWhatsAppMessage(
             phone,
             aiResponse.response,
-            waapifyConfig.accessToken,
-            waapifyConfig.instanceId
+            waapifyConfig.access_token,
+            waapifyConfig.instance_id
           );
           whatsappSent = whatsappResult.success;
           
           // Log the AI conversation
-          if (installation.locationId) {
-            await logMessage(installation.companyId, installation.locationId, {
+          if (installation.location_id) {
+            await logMessage(installation.company_id, installation.location_id, {
               ghlMessageId: `ai_ghl_${Date.now()}`,
               waapifyMessageId: whatsappResult.messageId || `ai_ghl_${Date.now()}`,
               recipient: phone,
@@ -977,15 +992,15 @@ app.post("/action/ai-chatbot-ghl", async (req: Request, res: Response) => {
 app.post("/debug/create-test-installation", async (req: Request, res: Response) => {
   try {
     const { companyId, locationId } = req.body;
-    const testInstallation = {
-      companyId: companyId || "test_company_456",
-      locationId: locationId || "test_location_123", 
+    const testInstallation: Installation = {
+      company_id: companyId || "test_company_456",
+      location_id: locationId || "test_location_123",
       access_token: "test_token",
       refresh_token: "test_refresh",
       expires_in: 3600
     };
     
-    Storage.save(testInstallation);
+    await Database.saveInstallation(testInstallation);
     
     res.json({
       success: true,
@@ -1098,10 +1113,10 @@ app.post("/action/send-whatsapp-text", async (req: Request, res: Response) => {
     // If credentials not provided directly, try to get from stored config
     if ((!instance_id || !access_token) && locationId && companyId) {
       console.log('Trying to get stored Waapify config for:', { locationId, companyId });
-      const waapifyConfig = Storage.getWaapifyConfig(companyId, locationId);
+      const waapifyConfig = await Database.getWaapifyConfig(companyId, locationId);
       if (waapifyConfig) {
-        finalInstanceId = finalInstanceId || waapifyConfig.instanceId;
-        finalAccessToken = finalAccessToken || waapifyConfig.accessToken;
+        finalInstanceId = finalInstanceId || waapifyConfig.instance_id;
+        finalAccessToken = finalAccessToken || waapifyConfig.access_token;
         console.log('Found stored config:', { instanceId: !!finalInstanceId, accessToken: !!finalAccessToken });
       }
     }
@@ -1170,10 +1185,10 @@ app.post("/action/check-whatsapp-phone", async (req: Request, res: Response) => 
   // If credentials not provided directly, try to get from stored config
   if ((!instance_id || !access_token) && locationId && companyId) {
     console.log('Trying to get stored Waapify config for check number:', { locationId, companyId });
-    const waapifyConfig = Storage.getWaapifyConfig(companyId, locationId);
+    const waapifyConfig = await Database.getWaapifyConfig(companyId, locationId);
     if (waapifyConfig) {
-      finalInstanceId = finalInstanceId || waapifyConfig.instanceId;
-      finalAccessToken = finalAccessToken || waapifyConfig.accessToken;
+      finalInstanceId = finalInstanceId || waapifyConfig.instance_id;
+      finalAccessToken = finalAccessToken || waapifyConfig.access_token;
     }
   }
   
@@ -1280,18 +1295,18 @@ async function processAIChatbotAutoResponse(messageData: any) {
     const instanceId = messageData.instance_id;
     
     // Find which location this instance belongs to
-    const installations = Storage.getAll();
+    const installations = await Database.getAllInstallations();
     const installation = installations.find(inst => 
-      inst.waapifyConfig?.instanceId === instanceId
+      null === instanceId
     );
     
-    if (!installation || !installation.locationId) {
+    if (!installation || !installation.location_id) {
       console.log("No installation found for AI chatbot processing");
       return;
     }
     
     // Get AI chatbot configuration
-    const aiConfig = Storage.getAIChatbotConfig(installation.companyId, installation.locationId);
+    const aiConfig = await Database.getAIConfig(installation.company_id, installation.location_id);
     
     if (!aiConfig || !aiConfig.enabled) {
       console.log("AI chatbot not enabled for this location");
@@ -1299,7 +1314,7 @@ async function processAIChatbotAutoResponse(messageData: any) {
     }
     
     // Check if message triggers any keywords
-    const triggeredKeywords = checkKeywordTriggers(messageText, aiConfig.keywords);
+    const triggeredKeywords = checkKeywordTriggers(messageText, (aiConfig.keywords || "").split(','));
     
     if (triggeredKeywords.length === 0) {
       console.log("No AI chatbot keywords triggered");
@@ -1311,10 +1326,10 @@ async function processAIChatbotAutoResponse(messageData: any) {
     // Generate AI response using user's API key
     const aiResponse = await generateChatGPTResponse({
       customerMessage: messageText,
-      context: aiConfig.context,
-      persona: aiConfig.persona,
+      context: aiConfig.context || '',
+      persona: aiConfig.persona || '',
       triggeredKeywords,
-      openaiApiKey: aiConfig.openaiApiKey
+      openaiApiKey: aiConfig.openai_api_key || ''
     });
     
     if (!aiResponse.success) {
@@ -1323,17 +1338,17 @@ async function processAIChatbotAutoResponse(messageData: any) {
     }
     
     // Send AI response via WhatsApp
-    const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, installation.locationId);
+    const waapifyConfig = await Database.getWaapifyConfig(installation.company_id, installation.location_id);
     if (waapifyConfig && aiResponse.response) {
       const whatsappResult = await sendWhatsAppMessage(
         fromNumber,
         aiResponse.response,
-        waapifyConfig.accessToken,
-        waapifyConfig.instanceId
+        waapifyConfig.access_token,
+        waapifyConfig.instance_id
       );
       
       // Log the AI conversation
-      await logMessage(installation.companyId, installation.locationId, {
+      await logMessage(installation.company_id, installation.location_id, {
         ghlMessageId: `ai_auto_${Date.now()}`,
         waapifyMessageId: whatsappResult.messageId || `ai_auto_${Date.now()}`,
         recipient: fromNumber,
@@ -1360,18 +1375,18 @@ async function forwardToGHLConversation(messageData: any) {
     const instanceId = messageData.instance_id;
     
     // Find which location this instance belongs to
-    const installations = Storage.getAll();
+    const installations = await Database.getAllInstallations();
     const installation = installations.find(inst => 
-      inst.waapifyConfig?.instanceId === instanceId
+      null === instanceId
     );
     
-    if (!installation || !installation.locationId) {
+    if (!installation || !installation.location_id) {
       console.error("No installation found for instance ID:", instanceId);
       return;
     }
     
     // Create contact if not exists
-    const api = ghl.requests(installation.companyId);
+    const api = ghl.requests(installation.company_id);
     
     // Create/update contact
     try {
@@ -1379,7 +1394,7 @@ async function forwardToGHLConversation(messageData: any) {
         firstName: "WhatsApp",
         lastName: "Contact",
         phone: fromNumber,
-        locationId: installation.locationId
+        locationId: installation.location_id
       }, { headers: { Version: "2021-07-28" } });
     } catch (contactError) {
       // Contact might already exist, that's OK
@@ -1389,10 +1404,10 @@ async function forwardToGHLConversation(messageData: any) {
     // Send message to conversation
     await api.post("/conversations/messages", {
       type: "WhatsApp",
-      contactId: await getContactId(fromNumber, installation.locationId, api),
+      contactId: await getContactId(fromNumber, installation.location_id, api),
       message: messageText,
       direction: "inbound",
-      locationId: installation.locationId
+      locationId: installation.location_id
     }, { headers: { Version: "2021-07-28" } });
     
     console.log("Message forwarded to GHL successfully");
@@ -1438,10 +1453,10 @@ app.get("/example-api-call-location", async (req, res) => {
       return res.status(400).send("Company token not found. Authorize app first.");
     }
 
-    let token = Storage.getTokenForLocation(locationId);
+    let token = await Database.getTokenForLocation(locationId);
     if (!token) {
       await ghl.getLocationTokenFromCompanyToken(companyId, locationId);
-      token = Storage.getTokenForLocation(locationId);
+      token = await Database.getTokenForLocation(locationId);
     }
 
     if (!token) return res.status(400).send("Failed to get access token for location");
@@ -1824,13 +1839,13 @@ app.post("/action/ai-chatbot-response", async (req: Request, res: Response) => {
     // Get user's OpenAI API key if available
     let userOpenAIKey = undefined;
     if (locationId && companyId) {
-      const installations = Storage.getAll();
+      const installations = await Database.getAllInstallations();
       const installation = installations.find(inst => 
-        inst.locationId === locationId || inst.companyId === companyId
+        inst.location_id === locationId || inst.company_id === companyId
       );
       if (installation) {
-        const aiConfig = Storage.getAIChatbotConfig(installation.companyId, installation.locationId || '');
-        userOpenAIKey = aiConfig?.openaiApiKey;
+        const aiConfig = await Database.getAIConfig(installation.company_id, installation.location_id || '');
+        userOpenAIKey = aiConfig?.openai_api_key;
       }
     }
     
@@ -1852,13 +1867,13 @@ app.post("/action/ai-chatbot-response", async (req: Request, res: Response) => {
     
     // Send AI response via WhatsApp if phone number provided
     if (phone) {
-      const waapifyConfig = Storage.getWaapifyConfig(companyId, locationId);
+      const waapifyConfig = await Database.getWaapifyConfig(companyId, locationId);
       if (waapifyConfig) {
         const whatsappResult = await sendWhatsAppMessage(
           phone,
           aiResponse.response || '',
-          waapifyConfig.accessToken,
-          waapifyConfig.instanceId
+          waapifyConfig.access_token,
+          waapifyConfig.instance_id
         );
         
         // Log the AI conversation
@@ -1996,7 +2011,7 @@ app.post("/api/ai-chatbot/configure", async (req: Request, res: Response) => {
   
   try {
     // Save AI chatbot configuration
-    Storage.saveAIChatbotConfig(companyId, locationId, config);
+    await Database.saveAIConfig(config);
     
     res.json({
       success: true,
@@ -2017,7 +2032,7 @@ app.get("/api/ai-chatbot/config", async (req: Request, res: Response) => {
   }
   
   try {
-    const config = Storage.getAIChatbotConfig(companyId, locationId);
+    const config = await Database.getAIConfig(companyId, locationId);
     
     res.json({
       success: true,
@@ -2156,7 +2171,7 @@ app.get("/api/message-status/:messageId", async (req: Request, res: Response) =>
 // Multi-user backup/restore system for marketplace app
 async function ensureCriticalInstallations() {
   try {
-    const installations = Storage.getAll();
+    const installations = await Database.getAllInstallations();
     const installationCount = installations.length;
     
     // If no installations exist, try to restore from backup
@@ -2171,16 +2186,28 @@ async function ensureCriticalInstallations() {
           let restoredCount = 0;
           
           for (const backup of parsedBackup) {
-            Storage.save({
-              companyId: backup.companyId,
-              locationId: backup.locationId,
-              access_token: 'restored_token',
-              refresh_token: 'restored_refresh', 
-              expires_in: 86400
-            });
+            await Database.saveInstallation({
+            company_id: backup.companyId,
+            location_id: backup.locationId,
+            access_token: 'restored_token',
+            refresh_token: 'restored_refresh',
+            expires_in: 86400
+          } as Installation);
             
             if (backup.waapifyConfig) {
-              Storage.saveWaapifyConfig(backup.companyId, backup.locationId, backup.waapifyConfig);
+              const installation = await Database.getInstallation(backup.companyId, backup.locationId);
+              if (installation && installation.id) {
+                const waapifyConfig: WaapifyConfig = {
+                  installation_id: installation.id,
+                  company_id: backup.companyId,
+                  location_id: backup.locationId,
+                  access_token: backup.waapifyConfig.access_token,
+                  instance_id: backup.waapifyConfig.instance_id,
+                  whatsapp_number: backup.waapifyConfig.whatsapp_number,
+                  is_active: true
+                };
+                await Database.saveWaapifyConfig(waapifyConfig);
+              }
             }
             
             restoredCount++;
@@ -2198,11 +2225,18 @@ async function ensureCriticalInstallations() {
     }
     
     // Create backup of current installations for future recovery
-    const currentBackup = installations.map(inst => ({
-      companyId: inst.companyId,
-      locationId: inst.locationId,
-      waapifyConfig: Storage.getWaapifyConfig(inst.companyId, inst.locationId || '')
-    })).filter(backup => backup.waapifyConfig); // Only backup installations with Waapify config
+    // Create backup asynchronously
+    const currentBackup = [];
+    for (const inst of installations) {
+      const waapifyConfig = await Database.getWaapifyConfig(inst.company_id, inst.location_id || '');
+      if (waapifyConfig) {
+        currentBackup.push({
+          companyId: inst.company_id,
+          locationId: inst.location_id,
+          waapifyConfig
+        });
+      }
+    } // Only backup installations with Waapify config
     
     if (currentBackup.length > 0) {
       console.log(`📦 Created backup for ${currentBackup.length} configured installations`);
@@ -2220,12 +2254,19 @@ async function ensureCriticalInstallations() {
 // Get current installations backup data (for manual backup)
 app.get("/admin/backup", async (req: Request, res: Response) => {
   try {
-    const installations = Storage.getAll();
-    const backupData = installations.map(inst => ({
-      companyId: inst.companyId,
-      locationId: inst.locationId,
-      waapifyConfig: Storage.getWaapifyConfig(inst.companyId, inst.locationId || '')
-    })).filter(backup => backup.waapifyConfig);
+    const installations = await Database.getAllInstallations();
+    // Create backup data asynchronously
+    const backupData = [];
+    for (const inst of installations) {
+      const waapifyConfig = await Database.getWaapifyConfig(inst.company_id, inst.location_id || '');
+      if (waapifyConfig) {
+        backupData.push({
+          companyId: inst.company_id,
+          locationId: inst.location_id,
+          waapifyConfig
+        });
+      }
+    }
     
     res.json({
       success: true,
