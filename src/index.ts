@@ -326,14 +326,10 @@ app.post("/external-auth", async (req: Request, res: Response) => {
   const instance_id = req.body.instance_id || req.body.instanceId || req.body['instance-id'];
   const whatsapp_number = req.body.whatsapp_number || req.body.whatsappNumber || req.body['whatsapp-number'];
   
-  // Check for OpenAI API key
-  const openai_api_key = req.body.openai_api_key || req.body.openaiApiKey || req.body['openai-api-key'];
-  
   console.log('=== Extracted Values ===', {
     access_token,
     instance_id, 
-    whatsapp_number,
-    openai_api_key: openai_api_key ? 'provided' : 'not provided'
+    whatsapp_number
   });
   
   // Handle test data from marketplace
@@ -411,18 +407,6 @@ app.post("/external-auth", async (req: Request, res: Response) => {
           instanceId: instance_id,
           whatsappNumber: whatsapp_number || 'unknown'
         });
-        
-        // Store OpenAI API key if provided
-        if (openai_api_key) {
-          console.log('=== Storing OpenAI Config ===', { locationId, companyId });
-          Storage.saveAIChatbotConfig(companyId, locationId, {
-            enabled: true,
-            keywords: ['help', 'support', 'hours', 'menu', 'price'], // Default keywords
-            context: 'You are a helpful business assistant.',
-            persona: 'professional and friendly',
-            openaiApiKey: openai_api_key
-          });
-        }
       }
       
       // Return success response for GHL with provider registration
@@ -800,6 +784,7 @@ app.post("/action/ai-chatbot-ghl", async (req: Request, res: Response) => {
     context, 
     persona, 
     phone,
+    openai_api_key, // OpenAI key provided directly in workflow action
     locationId, 
     companyId,
     contactId 
@@ -832,16 +817,20 @@ app.post("/action/ai-chatbot-ghl", async (req: Request, res: Response) => {
       });
     }
     
-    // Get user's AI configuration and API key
-    const installations = Storage.getAll();
-    const installation = installations.find(inst => 
-      inst.locationId === locationId || inst.companyId === companyId
-    );
+    // Use OpenAI API key from workflow action (priority) or stored config (fallback)
+    let userOpenAIKey = openai_api_key; // From workflow action field
     
-    let userOpenAIKey = undefined;
-    if (installation) {
-      const aiConfig = Storage.getAIChatbotConfig(installation.companyId, installation.locationId || '');
-      userOpenAIKey = aiConfig?.openaiApiKey;
+    if (!userOpenAIKey) {
+      // Fallback to stored API key if available
+      const installations = Storage.getAll();
+      const installation = installations.find(inst => 
+        inst.locationId === locationId || inst.companyId === companyId
+      );
+      
+      if (installation) {
+        const aiConfig = Storage.getAIChatbotConfig(installation.companyId, installation.locationId || '');
+        userOpenAIKey = aiConfig?.openaiApiKey;
+      }
     }
     
     // Generate AI response with user's API key
