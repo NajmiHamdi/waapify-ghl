@@ -909,6 +909,32 @@ app.post("/action/ai-chatbot-ghl", async (req: Request, res: Response) => {
   }
 });
 
+/* -------------------- Testing/Debug Endpoints -------------------- */
+
+// Temporary endpoint to create test installation for debugging
+app.post("/debug/create-test-installation", async (req: Request, res: Response) => {
+  try {
+    const { companyId, locationId } = req.body;
+    const testInstallation = {
+      companyId: companyId || "test_company_456",
+      locationId: locationId || "test_location_123", 
+      access_token: "test_token",
+      refresh_token: "test_refresh",
+      expires_in: 3600
+    };
+    
+    Storage.save(testInstallation);
+    
+    res.json({
+      success: true,
+      message: "Test installation created",
+      installation: testInstallation
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
 /* -------------------- WhatsApp Actions Endpoints -------------------- */
 
 // Send WhatsApp Text Message (with JSON error handling)
