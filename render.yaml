@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: waapify-ghl
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build-ui
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 10000
+      - key: GHL_APP_CLIENT_ID
+        value: 68a2e8f358c5af6573ce7c52-mehih392
+      - key: GHL_APP_CLIENT_SECRET
+        sync: false
+      - key: GHL_APP_SSO_KEY
+        sync: false
+      - key: GHL_REDIRECT_URI
+        value: https://waaghl.waapify.com/authorize-handler
+      - key: GHL_API_DOMAIN
+        value: https://services.leadconnectorhq.com
+      - key: WAAPIFY_ACCESS_TOKEN
+        sync: false
+      - key: WAAPIFY_INSTANCE_ID
+        sync: false
+      - key: WAAPIFY_WHATSAPP_NUMBER
+        sync: false
+      - key: OPENAI_API_KEY
+        sync: false
+    domains:
+      - waaghl.waapify.com
