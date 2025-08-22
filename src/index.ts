@@ -701,7 +701,7 @@ app.get("/provider/status", async (req: Request, res: Response) => {
 app.post("/action/send-whatsapp-media-ghl", async (req: Request, res: Response) => {
   console.log('=== GHL Media Action Called ===', JSON.stringify(req.body, null, 2));
   
-  const { number, message, media_url, filename, locationId, companyId, contactId } = req.body;
+  const { number, message, media_url, filename, locationId, companyId, contactId, instance_id, access_token } = req.body;
   
   if (!number || !message || !media_url) {
     return res.status(400).json({ 
@@ -711,24 +711,30 @@ app.post("/action/send-whatsapp-media-ghl", async (req: Request, res: Response) 
   }
   
   try {
-    // Find Waapify configuration for this location
-    const installations = Storage.getAll();
-    const installation = installations.find(inst => 
-      inst.locationId === locationId || inst.companyId === companyId
-    );
+    let finalInstanceId = instance_id;
+    let finalAccessToken = access_token;
     
-    if (!installation) {
-      return res.status(400).json({ 
-        success: false,
-        error: "Installation not found. Please configure Waapify integration first." 
-      });
+    // If credentials not provided directly, try to get from stored config
+    if ((!instance_id || !access_token) && locationId && companyId) {
+      console.log('Trying to get stored Waapify config for:', { locationId, companyId });
+      const installations = Storage.getAll();
+      const installation = installations.find(inst => 
+        inst.locationId === locationId || inst.companyId === companyId
+      );
+      
+      if (installation) {
+        const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, installation.locationId || '');
+        if (waapifyConfig) {
+          finalInstanceId = finalInstanceId || waapifyConfig.instanceId;
+          finalAccessToken = finalAccessToken || waapifyConfig.accessToken;
+        }
+      }
     }
     
-    const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, installation.locationId || '');
-    if (!waapifyConfig) {
+    if (!finalInstanceId || !finalAccessToken) {
       return res.status(400).json({ 
         success: false,
-        error: "Waapify not configured. Please complete external authentication." 
+        error: "Missing credentials. Either provide instance_id & access_token directly, or ensure locationId & companyId are provided with stored Waapify config." 
       });
     }
     
@@ -736,24 +742,31 @@ app.post("/action/send-whatsapp-media-ghl", async (req: Request, res: Response) 
     const result = await sendWhatsAppMessage(
       number, 
       message, 
-      waapifyConfig.accessToken, 
-      waapifyConfig.instanceId,
+      finalAccessToken, 
+      finalInstanceId,
       'media',
       media_url,
       filename
     );
     
-    // Log the message
-    if (installation.locationId) {
-      await logMessage(installation.companyId, installation.locationId, {
-        ghlMessageId: `media_${Date.now()}`,
-        waapifyMessageId: result.messageId || `media_${Date.now()}`,
-        recipient: number,
-        message: `${message} [Media: ${filename || 'file'}]`,
-        type: 'media',
-        status: result.success ? 'sent' : 'failed',
-        sentAt: new Date().toISOString()
-      });
+    // Log the message (if we have installation)
+    if (locationId && companyId) {
+      const installations = Storage.getAll();
+      const installation = installations.find(inst => 
+        inst.locationId === locationId || inst.companyId === companyId
+      );
+      
+      if (installation && installation.locationId) {
+        await logMessage(installation.companyId, installation.locationId, {
+          ghlMessageId: `media_${Date.now()}`,
+          waapifyMessageId: result.messageId || `media_${Date.now()}`,
+          recipient: number,
+          message: `${message} [Media: ${filename || 'file'}]`,
+          type: 'media',
+          status: result.success ? 'sent' : 'failed',
+          sentAt: new Date().toISOString()
+        });
+      }
     }
     
     // Return GHL-compatible response
