@@ -14,6 +14,13 @@ interface Installation {
     instanceId: string;
     whatsappNumber: string;
   };
+  aiChatbotConfig?: {
+    enabled: boolean;
+    keywords: string[];
+    context: string;
+    persona: string;
+    openaiApiKey?: string;
+  };
 }
 
 export class Storage {
@@ -68,5 +75,36 @@ export class Storage {
       i.companyId === companyId && (locationId ? i.locationId === locationId : true)
     );
     return inst?.waapifyConfig || null;
+  }
+
+  /** Save AI Chatbot configuration */
+  static saveAIChatbotConfig(companyId: string, locationId: string, aiChatbotConfig: { enabled: boolean; keywords: string[]; context: string; persona: string; openaiApiKey?: string }) {
+    const all = Storage.getAll();
+    const idx = all.findIndex(
+      (i) => i.companyId === companyId && (locationId ? i.locationId === locationId : true)
+    );
+    
+    if (idx > -1) {
+      all[idx].aiChatbotConfig = aiChatbotConfig;
+    } else {
+      // Create new installation record if not found
+      all.push({
+        companyId,
+        locationId,
+        access_token: '',
+        refresh_token: '',
+        expires_in: 0,
+        aiChatbotConfig
+      });
+    }
+    fs.writeFileSync(FILE_PATH, JSON.stringify(all, null, 2));
+  }
+
+  /** Get AI Chatbot configuration */
+  static getAIChatbotConfig(companyId: string, locationId?: string): { enabled: boolean; keywords: string[]; context: string; persona: string; openaiApiKey?: string } | null {
+    const inst = this.getAll().find((i) => 
+      i.companyId === companyId && (locationId ? i.locationId === locationId : true)
+    );
+    return inst?.aiChatbotConfig || null;
   }
 }

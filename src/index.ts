@@ -321,15 +321,19 @@ app.post("/external-auth", async (req: Request, res: Response) => {
   console.log('=== External Auth Request - Full Body ===', JSON.stringify(req.body, null, 2));
   console.log('=== Headers ===', req.headers);
   
-  // Check all possible field variations
+  // Check all possible field variations for Waapify
   const access_token = req.body.access_token || req.body.accessToken || req.body['access-token'];
   const instance_id = req.body.instance_id || req.body.instanceId || req.body['instance-id'];
   const whatsapp_number = req.body.whatsapp_number || req.body.whatsappNumber || req.body['whatsapp-number'];
   
+  // Check for OpenAI API key
+  const openai_api_key = req.body.openai_api_key || req.body.openaiApiKey || req.body['openai-api-key'];
+  
   console.log('=== Extracted Values ===', {
     access_token,
     instance_id, 
-    whatsapp_number
+    whatsapp_number,
+    openai_api_key: openai_api_key ? 'provided' : 'not provided'
   });
   
   // Handle test data from marketplace
@@ -359,22 +363,29 @@ app.post("/external-auth", async (req: Request, res: Response) => {
       console.log(`${key}: ${req.body[key]}`);
     }
     
-    // TEMPORARY: If real locationId present, assume external auth bypass
-    if (req.body.locationId && req.body.locationId.includes('rjsdYp4AhllL4EJDzQCP')) {
-      console.log('=== Real Installation Detected - Bypassing External Auth ===');
+    // Handle GHL installation process - if no credentials provided but locationId present
+    if (req.body.locationId && !req.body.access_token) {
+      console.log('=== GHL Installation Process - Providing Default Success Response ===');
       return res.json({
         success: true,
-        message: "External auth bypassed - using existing credentials",
+        message: "Installation process detected - external auth will be configured later",
         data: {
-          access_token: "1740aed492830374b432091211a6628d", // Use actual credentials
-          instance_id: "673F5A50E7194",
-          whatsapp_number: "60149907876",
-          status: "authenticated",
-          provider: "waapify",
-          bypass_mode: true
+          access_token: "pending",
+          instance_id: "pending",
+          whatsapp_number: "pending",
+          status: "installation_pending",
+          provider: "waapify"
         }
       });
     }
+    
+    return res.status(400).json({
+      success: false,
+      error: "Missing required Waapify credentials",
+      required_fields: ["access_token", "instance_id", "whatsapp_number (optional)"],
+      received_fields: Object.keys(req.body),
+      message: "Please provide your Waapify access_token and instance_id"
+    });
   }
   
   if (!access_token || !instance_id) {
@@ -391,6 +402,29 @@ app.post("/external-auth", async (req: Request, res: Response) => {
     const authResult = await testWaapifyConnection(access_token, instance_id);
     
     if (authResult.success) {
+      // Store Waapify credentials for this locationId
+      const { locationId, companyId } = req.body;
+      if (locationId && companyId) {
+        console.log('=== Storing Waapify Config ===', { locationId, companyId, instance_id });
+        Storage.saveWaapifyConfig(companyId, locationId, {
+          accessToken: access_token,
+          instanceId: instance_id,
+          whatsappNumber: whatsapp_number || 'unknown'
+        });
+        
+        // Store OpenAI API key if provided
+        if (openai_api_key) {
+          console.log('=== Storing OpenAI Config ===', { locationId, companyId });
+          Storage.saveAIChatbotConfig(companyId, locationId, {
+            enabled: true,
+            keywords: ['help', 'support', 'hours', 'menu', 'price'], // Default keywords
+            context: 'You are a helpful business assistant.',
+            persona: 'professional and friendly',
+            openaiApiKey: openai_api_key
+          });
+        }
+      }
+      
       // Return success response for GHL with provider registration
       return res.json({
         success: true,
@@ -398,7 +432,7 @@ app.post("/external-auth", async (req: Request, res: Response) => {
         data: {
           access_token: access_token,
           instance_id: instance_id, 
-          whatsapp_number: whatsapp_number,
+          whatsapp_number: whatsapp_number || 'unknown',
           status: "authenticated",
           provider: "waapify"
         },
@@ -511,15 +545,15 @@ app.get("/api/phone-numbers", async (req: Request, res: Response) => {
 app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
   console.log("=== Conversation Provider Webhook Received ===", JSON.stringify(req.body, null, 2));
   
-  const { contactId, locationId, type, phone, message, messageId } = req.body;
+  const { contactId, locationId, type, phone, message, messageId, attachments } = req.body;
   
   if (!contactId || !locationId || !type) {
     return res.status(400).json({ error: "Missing required fields: contactId, locationId, type" });
   }
   
-  // Only handle SMS type for now
-  if (type !== "SMS") {
-    return res.status(400).json({ error: "Only SMS type supported" });
+  // Handle SMS and WhatsApp types
+  if (type !== "SMS" && type !== "WhatsApp") {
+    return res.status(400).json({ error: "Only SMS and WhatsApp types supported" });
   }
   
   if (!phone || !message) {
@@ -541,29 +575,74 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Waapify not configured for this location" });
     }
     
-    // Send via Waapify WhatsApp
-    const whatsappResult = await sendWhatsAppMessage(
-      phone,
-      message,
-      waapifyConfig.accessToken,
-      waapifyConfig.instanceId
-    );
+    // Check for rate limiting
+    const rateLimitCheck = await checkRateLimit(installation.companyId, locationId);
+    if (!rateLimitCheck.allowed) {
+      return res.status(429).json({ 
+        success: false,
+        error: "Rate limit exceeded. Please wait before sending more messages.",
+        retryAfter: rateLimitCheck.retryAfter,
+        messageId: messageId || `wa_${Date.now()}`
+      });
+    }
+    
+    let whatsappResult;
+    
+    // Handle media attachments
+    if (attachments && attachments.length > 0) {
+      // Send media message
+      const attachment = attachments[0]; // Take first attachment
+      whatsappResult = await sendWhatsAppMessage(
+        phone,
+        message,
+        waapifyConfig.accessToken,
+        waapifyConfig.instanceId,
+        'media',
+        attachment.url,
+        attachment.filename
+      );
+    } else {
+      // Send text message
+      whatsappResult = await sendWhatsAppMessage(
+        phone,
+        message,
+        waapifyConfig.accessToken,
+        waapifyConfig.instanceId
+      );
+    }
+    
+    // Update rate limit counter
+    await updateRateLimit(installation.companyId, locationId);
     
     if (whatsappResult.success) {
       console.log(`✅ WhatsApp message sent successfully to ${phone}`);
+      
+      // Log message for delivery tracking
+      await logMessage(installation.companyId, locationId, {
+        ghlMessageId: messageId,
+        waapifyMessageId: whatsappResult.messageId,
+        recipient: phone,
+        message: message,
+        type: attachments && attachments.length > 0 ? 'media' : 'text',
+        status: 'sent',
+        sentAt: new Date().toISOString()
+      });
+      
+      // GHL expects specific response format
       res.json({
         success: true,
-        messageId: whatsappResult.messageId || messageId,
-        provider: "waapify",
-        deliveredVia: "whatsapp",
-        status: "sent"
+        conversationId: `conv_${locationId}_${contactId}`,
+        messageId: whatsappResult.messageId || messageId || `wa_${Date.now()}`,
+        message: message,
+        contactId: contactId,
+        dateAdded: new Date().toISOString()
       });
     } else {
       console.error(`❌ WhatsApp send failed:`, whatsappResult.error);
       res.status(500).json({ 
         success: false,
         error: whatsappResult.error,
-        messageId: messageId
+        messageId: messageId || `wa_${Date.now()}`
       });
     }
   } catch (error: any) {
@@ -627,6 +706,215 @@ app.get("/provider/status", async (req: Request, res: Response) => {
     console.error("Provider status error:", error);
     res.json({
       status: "error",
+      error: error.message
+    });
+  }
+});
+
+/* -------------------- GHL Marketplace Workflow Actions -------------------- */
+
+// GHL Action: Send WhatsApp Media (for marketplace workflows)
+app.post("/action/send-whatsapp-media-ghl", async (req: Request, res: Response) => {
+  console.log('=== GHL Media Action Called ===', JSON.stringify(req.body, null, 2));
+  
+  const { number, message, media_url, filename, locationId, companyId, contactId } = req.body;
+  
+  if (!number || !message || !media_url) {
+    return res.status(400).json({ 
+      success: false,
+      error: "Missing required fields: number, message, media_url" 
+    });
+  }
+  
+  try {
+    // Find Waapify configuration for this location
+    const installations = Storage.getAll();
+    const installation = installations.find(inst => 
+      inst.locationId === locationId || inst.companyId === companyId
+    );
+    
+    if (!installation) {
+      return res.status(400).json({ 
+        success: false,
+        error: "Installation not found. Please configure Waapify integration first." 
+      });
+    }
+    
+    const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, installation.locationId || '');
+    if (!waapifyConfig) {
+      return res.status(400).json({ 
+        success: false,
+        error: "Waapify not configured. Please complete external authentication." 
+      });
+    }
+    
+    // Send media message via Waapify
+    const result = await sendWhatsAppMessage(
+      number, 
+      message, 
+      waapifyConfig.accessToken, 
+      waapifyConfig.instanceId,
+      'media',
+      media_url,
+      filename
+    );
+    
+    // Log the message
+    if (installation.locationId) {
+      await logMessage(installation.companyId, installation.locationId, {
+        ghlMessageId: `media_${Date.now()}`,
+        waapifyMessageId: result.messageId || `media_${Date.now()}`,
+        recipient: number,
+        message: `${message} [Media: ${filename || 'file'}]`,
+        type: 'media',
+        status: result.success ? 'sent' : 'failed',
+        sentAt: new Date().toISOString()
+      });
+    }
+    
+    // Return GHL-compatible response
+    res.json({
+      success: result.success,
+      messageId: result.messageId,
+      message: result.success ? "Media message sent successfully" : "Failed to send media message",
+      data: result.data,
+      error: result.success ? null : result.error
+    });
+    
+  } catch (error: any) {
+    console.error('GHL Media Action error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// GHL Action: AI Chatbot Response (for marketplace workflows)  
+app.post("/action/ai-chatbot-ghl", async (req: Request, res: Response) => {
+  console.log('=== GHL AI Chatbot Action Called ===', JSON.stringify(req.body, null, 2));
+  
+  const { 
+    customerMessage, 
+    keywords, 
+    context, 
+    persona, 
+    phone,
+    locationId, 
+    companyId,
+    contactId 
+  } = req.body;
+  
+  if (!customerMessage) {
+    return res.status(400).json({ 
+      success: false,
+      error: "Missing required field: customerMessage" 
+    });
+  }
+  
+  try {
+    // Parse keywords if string
+    let keywordArray = keywords;
+    if (typeof keywords === 'string') {
+      keywordArray = keywords.split(',').map(k => k.trim()).filter(k => k.length > 0);
+    }
+    
+    // Check keyword triggers
+    const triggeredKeywords = checkKeywordTriggers(customerMessage, keywordArray || []);
+    
+    if (triggeredKeywords.length === 0 && keywordArray && keywordArray.length > 0) {
+      return res.json({
+        success: true,
+        triggered: false,
+        message: "No trigger keywords found in message",
+        keywords: keywordArray,
+        customerMessage: customerMessage
+      });
+    }
+    
+    // Get user's AI configuration and API key
+    const installations = Storage.getAll();
+    const installation = installations.find(inst => 
+      inst.locationId === locationId || inst.companyId === companyId
+    );
+    
+    let userOpenAIKey = undefined;
+    if (installation) {
+      const aiConfig = Storage.getAIChatbotConfig(installation.companyId, installation.locationId || '');
+      userOpenAIKey = aiConfig?.openaiApiKey;
+    }
+    
+    // Generate AI response with user's API key
+    const aiResponse = await generateChatGPTResponse({
+      customerMessage,
+      context: context || "You are a helpful business assistant.",
+      persona: persona || "professional and friendly",
+      triggeredKeywords,
+      openaiApiKey: userOpenAIKey
+    });
+    
+    if (!aiResponse.success) {
+      return res.status(500).json({
+        success: false,
+        error: "AI response generation failed: " + aiResponse.error
+      });
+    }
+    
+    let whatsappSent = false;
+    let whatsappResult = null;
+    
+    // Send via WhatsApp if phone provided and location configured
+    if (phone && (locationId || companyId)) {
+      const installations = Storage.getAll();
+      const installation = installations.find(inst => 
+        inst.locationId === locationId || inst.companyId === companyId
+      );
+      
+      if (installation) {
+        const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, installation.locationId || '');
+        if (waapifyConfig && aiResponse.response) {
+          whatsappResult = await sendWhatsAppMessage(
+            phone,
+            aiResponse.response,
+            waapifyConfig.accessToken,
+            waapifyConfig.instanceId
+          );
+          whatsappSent = whatsappResult.success;
+          
+          // Log the AI conversation
+          if (installation.locationId) {
+            await logMessage(installation.companyId, installation.locationId, {
+              ghlMessageId: `ai_ghl_${Date.now()}`,
+              waapifyMessageId: whatsappResult.messageId || `ai_ghl_${Date.now()}`,
+              recipient: phone,
+              message: aiResponse.response,
+              type: 'text',
+              status: whatsappResult.success ? 'sent' : 'failed',
+              sentAt: new Date().toISOString()
+            });
+          }
+        }
+      }
+    }
+    
+    // Return GHL-compatible response
+    res.json({
+      success: true,
+      triggered: true,
+      aiResponse: aiResponse.response,
+      triggeredKeywords,
+      whatsappSent,
+      messageId: whatsappResult?.messageId,
+      customerMessage,
+      message: whatsappSent ? 
+        "AI response generated and sent via WhatsApp" : 
+        "AI response generated (WhatsApp not sent - check configuration)"
+    });
+    
+  } catch (error: any) {
+    console.error('GHL AI Chatbot Action error:', error);
+    res.status(500).json({
+      success: false,
       error: error.message
     });
   }
@@ -767,7 +1055,10 @@ app.post("/webhook/waapify", async (req: Request, res: Response) => {
     if (webhookData.type === 'message' && webhookData.data) {
       const messageData = webhookData.data;
       
-      // Forward to GHL as incoming SMS
+      // Check for AI chatbot auto-response first
+      await processAIChatbotAutoResponse(messageData);
+      
+      // Then forward to GHL as incoming SMS
       await forwardToGHLConversation(messageData);
     }
     
@@ -777,6 +1068,85 @@ app.post("/webhook/waapify", async (req: Request, res: Response) => {
     res.status(500).json({ error: "Webhook processing failed" });
   }
 });
+
+/* -------------------- AI Chatbot Auto-Response Handler -------------------- */
+async function processAIChatbotAutoResponse(messageData: any) {
+  try {
+    const fromNumber = messageData.from || messageData.number;
+    const messageText = messageData.message || messageData.text;
+    const instanceId = messageData.instance_id;
+    
+    // Find which location this instance belongs to
+    const installations = Storage.getAll();
+    const installation = installations.find(inst => 
+      inst.waapifyConfig?.instanceId === instanceId
+    );
+    
+    if (!installation || !installation.locationId) {
+      console.log("No installation found for AI chatbot processing");
+      return;
+    }
+    
+    // Get AI chatbot configuration
+    const aiConfig = Storage.getAIChatbotConfig(installation.companyId, installation.locationId);
+    
+    if (!aiConfig || !aiConfig.enabled) {
+      console.log("AI chatbot not enabled for this location");
+      return;
+    }
+    
+    // Check if message triggers any keywords
+    const triggeredKeywords = checkKeywordTriggers(messageText, aiConfig.keywords);
+    
+    if (triggeredKeywords.length === 0) {
+      console.log("No AI chatbot keywords triggered");
+      return;
+    }
+    
+    console.log(`🤖 AI Chatbot triggered by keywords: ${triggeredKeywords.join(', ')}`);
+    
+    // Generate AI response using user's API key
+    const aiResponse = await generateChatGPTResponse({
+      customerMessage: messageText,
+      context: aiConfig.context,
+      persona: aiConfig.persona,
+      triggeredKeywords,
+      openaiApiKey: aiConfig.openaiApiKey
+    });
+    
+    if (!aiResponse.success) {
+      console.error("AI response generation failed:", aiResponse.error);
+      return;
+    }
+    
+    // Send AI response via WhatsApp
+    const waapifyConfig = Storage.getWaapifyConfig(installation.companyId, installation.locationId);
+    if (waapifyConfig && aiResponse.response) {
+      const whatsappResult = await sendWhatsAppMessage(
+        fromNumber,
+        aiResponse.response,
+        waapifyConfig.accessToken,
+        waapifyConfig.instanceId
+      );
+      
+      // Log the AI conversation
+      await logMessage(installation.companyId, installation.locationId, {
+        ghlMessageId: `ai_auto_${Date.now()}`,
+        waapifyMessageId: whatsappResult.messageId || `ai_auto_${Date.now()}`,
+        recipient: fromNumber,
+        message: aiResponse.response,
+        type: 'text',
+        status: whatsappResult.success ? 'sent' : 'failed',
+        sentAt: new Date().toISOString()
+      });
+      
+      console.log(`✅ AI auto-response sent to ${fromNumber}: ${aiResponse.response.substring(0, 50)}...`);
+    }
+    
+  } catch (error) {
+    console.error("AI chatbot auto-response error:", error);
+  }
+}
 
 /* -------------------- Forward to GHL Conversation -------------------- */
 async function forwardToGHLConversation(messageData: any) {
@@ -815,7 +1185,7 @@ async function forwardToGHLConversation(messageData: any) {
     
     // Send message to conversation
     await api.post("/conversations/messages", {
-      type: "SMS",
+      type: "WhatsApp",
       contactId: await getContactId(fromNumber, installation.locationId, api),
       message: messageText,
       direction: "inbound",
@@ -885,8 +1255,698 @@ app.get("/example-api-call-location", async (req, res) => {
   }
 });
 
+/* -------------------- Test Endpoint with Real Credentials -------------------- */
+app.post("/test/send-whatsapp-real", async (req: Request, res: Response) => {
+  const { number, message } = req.body;
+  
+  if (!number || !message) {
+    return res.status(400).json({ error: "Missing number or message" });
+  }
+  
+  try {
+    const accessToken = process.env.WAAPIFY_ACCESS_TOKEN;
+    const instanceId = process.env.WAAPIFY_INSTANCE_ID;
+    
+    if (!accessToken || !instanceId) {
+      return res.status(400).json({ 
+        error: "Waapify credentials not configured in .env file",
+        help: "Add WAAPIFY_ACCESS_TOKEN and WAAPIFY_INSTANCE_ID to your .env file"
+      });
+    }
+    
+    const result = await sendWhatsAppMessage(number, message, accessToken, instanceId);
+    res.json(result);
+    
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/* -------------------- Management Dashboard -------------------- */
+app.get("/dashboard", (req: Request, res: Response) => {
+  const dashboardHTML = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Waapify-GHL Management Dashboard</title>
+        <style>
+            body { font-family: Arial, sans-serif; margin: 20px; background: #f5f5f5; }
+            .container { max-width: 1200px; margin: 0 auto; }
+            .card { background: white; padding: 20px; margin: 20px 0; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            h1 { color: #333; text-align: center; }
+            h2 { color: #25D366; border-bottom: 2px solid #25D366; padding-bottom: 10px; }
+            .endpoint { background: #f8f9fa; padding: 15px; margin: 10px 0; border-radius: 5px; border-left: 4px solid #007cba; }
+            .method { display: inline-block; padding: 4px 8px; border-radius: 4px; color: white; font-weight: bold; margin-right: 10px; }
+            .get { background: #28a745; }
+            .post { background: #007bff; }
+            .put { background: #ffc107; color: black; }
+            .delete { background: #dc3545; }
+            code { background: #e9ecef; padding: 2px 4px; border-radius: 3px; }
+            .test-btn { background: #25D366; color: white; padding: 8px 16px; border: none; border-radius: 4px; cursor: pointer; margin-left: 10px; }
+            .test-btn:hover { background: #128C7E; }
+            .status { padding: 10px; border-radius: 4px; margin: 10px 0; }
+            .success { background: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+            .error { background: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
+            .logs { background: #2d3748; color: #e2e8f0; padding: 15px; border-radius: 5px; font-family: monospace; max-height: 300px; overflow-y: auto; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🚀 Waapify-GHL Management Dashboard</h1>
+            
+            <div class="card">
+                <h2>📊 System Status</h2>
+                <div id="systemStatus">Checking...</div>
+                <button class="test-btn" onclick="checkSystemStatus()">Refresh Status</button>
+            </div>
+            
+            <div class="card">
+                <h2>📱 Quick Tests</h2>
+                
+                <div class="endpoint">
+                    <span class="method get">GET</span>
+                    <strong>Provider Status</strong>
+                    <button class="test-btn" onclick="testProviderStatus()">Test</button>
+                    <div id="providerResult"></div>
+                </div>
+                
+                <div class="endpoint">
+                    <span class="method post">POST</span>
+                    <strong>External Auth Test</strong>
+                    <button class="test-btn" onclick="testExternalAuth()">Test</button>
+                    <div id="authResult"></div>
+                </div>
+                
+                <div class="endpoint">
+                    <span class="method get">GET</span>
+                    <strong>Message Logs</strong>
+                    <button class="test-btn" onclick="testMessageLogs()">View Logs</button>
+                    <div id="logsResult"></div>
+                </div>
+                
+                <div class="endpoint">
+                    <span class="method post">POST</span>
+                    <strong>Send Test WhatsApp (Real Credentials)</strong>
+                    <input type="text" id="testNumber" placeholder="60168970072" style="margin: 10px;">
+                    <input type="text" id="testMessage" placeholder="Hello from Waapify!" style="margin: 10px;">
+                    <button class="test-btn" onclick="sendTestWhatsApp()">Send Real Message</button>
+                    <div id="whatsappResult"></div>
+                    <small style="color: #666;">Uses your .env file credentials</small>
+                </div>
+            </div>
+            
+            <div class="card">
+                <h2>🤖 AI Chatbot Configuration</h2>
+                <p><strong>Status:</strong> <span style="color: orange;">In Development</span></p>
+                <p>Planning ChatGPT integration for automated responses based on keywords and context.</p>
+                <button class="test-btn" onclick="showChatbotInfo()">View Integration Plan</button>
+                <div id="chatbotInfo"></div>
+            </div>
+            
+            <div class="card">
+                <h2>📋 Available Endpoints</h2>
+                <div class="endpoint">
+                    <span class="method get">GET</span> <code>/provider/status</code> - Check provider health
+                </div>
+                <div class="endpoint">
+                    <span class="method post">POST</span> <code>/external-auth</code> - Authenticate Waapify credentials
+                </div>
+                <div class="endpoint">
+                    <span class="method post">POST</span> <code>/action/send-whatsapp-text</code> - Send WhatsApp message
+                </div>
+                <div class="endpoint">
+                    <span class="method get">GET</span> <code>/api/message-logs</code> - View message history
+                </div>
+                <div class="endpoint">
+                    <span class="method get">GET</span> <code>/api/waapify/qr-code</code> - Get WhatsApp QR code
+                </div>
+            </div>
+        </div>
+        
+        <script>
+            async function checkSystemStatus() {
+                const statusDiv = document.getElementById('systemStatus');
+                statusDiv.innerHTML = 'Checking...';
+                
+                try {
+                    const response = await fetch('/provider/status');
+                    const data = await response.json();
+                    statusDiv.innerHTML = '<div class="success">✅ Server is running</div>';
+                } catch (error) {
+                    statusDiv.innerHTML = '<div class="error">❌ Server connection failed</div>';
+                }
+            }
+            
+            async function testProviderStatus() {
+                const resultDiv = document.getElementById('providerResult');
+                try {
+                    const response = await fetch('/provider/status');
+                    const data = await response.json();
+                    resultDiv.innerHTML = '<div class="logs">' + JSON.stringify(data, null, 2) + '</div>';
+                } catch (error) {
+                    resultDiv.innerHTML = '<div class="error">Error: ' + error.message + '</div>';
+                }
+            }
+            
+            async function testExternalAuth() {
+                const resultDiv = document.getElementById('authResult');
+                try {
+                    const response = await fetch('/external-auth', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            access_token: 'test_token',
+                            instance_id: 'test_instance',
+                            locationId: 'test_location',
+                            companyId: 'test_company'
+                        })
+                    });
+                    const data = await response.json();
+                    resultDiv.innerHTML = '<div class="logs">' + JSON.stringify(data, null, 2) + '</div>';
+                } catch (error) {
+                    resultDiv.innerHTML = '<div class="error">Error: ' + error.message + '</div>';
+                }
+            }
+            
+            async function testMessageLogs() {
+                const resultDiv = document.getElementById('logsResult');
+                try {
+                    const response = await fetch('/api/message-logs?companyId=test_company&locationId=test_location');
+                    const data = await response.json();
+                    resultDiv.innerHTML = '<div class="logs">' + JSON.stringify(data, null, 2) + '</div>';
+                } catch (error) {
+                    resultDiv.innerHTML = '<div class="error">Error: ' + error.message + '</div>';
+                }
+            }
+            
+            async function sendTestWhatsApp() {
+                const number = document.getElementById('testNumber').value;
+                const message = document.getElementById('testMessage').value;
+                const resultDiv = document.getElementById('whatsappResult');
+                
+                if (!number || !message) {
+                    resultDiv.innerHTML = '<div class="error">Please enter both number and message</div>';
+                    return;
+                }
+                
+                try {
+                    // Use real credentials endpoint
+                    const response = await fetch('/test/send-whatsapp-real', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            number: number,
+                            message: message
+                        })
+                    });
+                    const data = await response.json();
+                    if (data.success) {
+                        resultDiv.innerHTML = '<div class="success">✅ WhatsApp message sent successfully!</div><div class="logs">' + JSON.stringify(data, null, 2) + '</div>';
+                    } else {
+                        resultDiv.innerHTML = '<div class="error">❌ Failed to send: ' + JSON.stringify(data, null, 2) + '</div>';
+                    }
+                } catch (error) {
+                    resultDiv.innerHTML = '<div class="error">❌ Error: ' + error.message + '</div>';
+                }
+            }
+            
+            function showChatbotInfo() {
+                const infoDiv = document.getElementById('chatbotInfo');
+                infoDiv.innerHTML = \`
+                    <div class="logs">
+🤖 ChatGPT Integration Plan:
+
+1. NEW ENDPOINT: /action/ai-chatbot-response
+2. KEYWORD DETECTION: Configure trigger words
+3. CHATGPT API: Send context + persona + customer message
+4. AUTO-REPLY: Send AI response via WhatsApp
+5. GHL INTEGRATION: Available as workflow action
+
+Example workflow:
+Customer: "What are your hours?"
+Trigger: "hours" keyword detected
+AI Context: Restaurant business hours info
+Response: "We're open 8AM-10PM daily! 🍽️"
+                    </div>
+                \`;
+            }
+            
+            // Auto-check status on load
+            checkSystemStatus();
+        </script>
+    </body>
+    </html>
+  `;
+  
+  res.send(dashboardHTML);
+});
+
 /* -------------------- Root -------------------- */
 app.get("/", (req, res) => res.sendFile(path + "index.html"));
+
+/* -------------------- Rate Limiting Functions -------------------- */
+interface RateLimit {
+  lastSent: number;
+  messageCount: number;
+  resetAt: number;
+}
+
+const rateLimits = new Map<string, RateLimit>();
+
+async function checkRateLimit(companyId: string, locationId: string): Promise<{ allowed: boolean; retryAfter?: number }> {
+  const key = `${companyId}_${locationId}`;
+  const now = Date.now();
+  const maxMessagesPerMinute = 10; // Configurable limit
+  const windowMs = 60 * 1000; // 1 minute window
+  
+  const rateLimit = rateLimits.get(key) || {
+    lastSent: 0,
+    messageCount: 0,
+    resetAt: now + windowMs
+  };
+  
+  // Reset counter if window has passed
+  if (now >= rateLimit.resetAt) {
+    rateLimit.messageCount = 0;
+    rateLimit.resetAt = now + windowMs;
+  }
+  
+  if (rateLimit.messageCount >= maxMessagesPerMinute) {
+    const retryAfter = Math.ceil((rateLimit.resetAt - now) / 1000);
+    return { allowed: false, retryAfter };
+  }
+  
+  return { allowed: true };
+}
+
+async function updateRateLimit(companyId: string, locationId: string): Promise<void> {
+  const key = `${companyId}_${locationId}`;
+  const now = Date.now();
+  const windowMs = 60 * 1000;
+  
+  const rateLimit = rateLimits.get(key) || {
+    lastSent: 0,
+    messageCount: 0,
+    resetAt: now + windowMs
+  };
+  
+  rateLimit.messageCount += 1;
+  rateLimit.lastSent = now;
+  
+  rateLimits.set(key, rateLimit);
+}
+
+/* -------------------- Message Logging Functions -------------------- */
+interface MessageLog {
+  ghlMessageId: string;
+  waapifyMessageId: string;
+  recipient: string;
+  message: string;
+  type: 'text' | 'media';
+  status: 'sent' | 'delivered' | 'failed';
+  sentAt: string;
+}
+
+const messageLogs = new Map<string, MessageLog[]>();
+
+async function logMessage(companyId: string, locationId: string, log: MessageLog): Promise<void> {
+  const key = `${companyId}_${locationId}`;
+  const logs = messageLogs.get(key) || [];
+  logs.push(log);
+  
+  // Keep only last 1000 messages to prevent memory issues
+  if (logs.length > 1000) {
+    logs.splice(0, logs.length - 1000);
+  }
+  
+  messageLogs.set(key, logs);
+}
+
+/* -------------------- AI Chatbot Integration -------------------- */
+
+// AI Chatbot Response Action for GHL Workflows
+app.post("/action/ai-chatbot-response", async (req: Request, res: Response) => {
+  console.log('=== AI Chatbot Action Called ===', JSON.stringify(req.body, null, 2));
+  
+  const { 
+    customerMessage, 
+    keywords, 
+    context, 
+    persona, 
+    locationId, 
+    companyId,
+    contactId,
+    phone
+  } = req.body;
+  
+  if (!customerMessage || !locationId || !companyId) {
+    return res.status(400).json({ 
+      error: "Missing required fields: customerMessage, locationId, companyId" 
+    });
+  }
+  
+  try {
+    // Check if message contains trigger keywords
+    const triggeredKeywords = checkKeywordTriggers(customerMessage, keywords || []);
+    
+    if (triggeredKeywords.length === 0 && keywords && keywords.length > 0) {
+      return res.json({
+        success: true,
+        triggered: false,
+        message: "No trigger keywords found",
+        keywords: keywords
+      });
+    }
+    
+    // Get user's OpenAI API key if available
+    let userOpenAIKey = undefined;
+    if (locationId && companyId) {
+      const installations = Storage.getAll();
+      const installation = installations.find(inst => 
+        inst.locationId === locationId || inst.companyId === companyId
+      );
+      if (installation) {
+        const aiConfig = Storage.getAIChatbotConfig(installation.companyId, installation.locationId || '');
+        userOpenAIKey = aiConfig?.openaiApiKey;
+      }
+    }
+    
+    // Generate AI response using ChatGPT
+    const aiResponse = await generateChatGPTResponse({
+      customerMessage,
+      context: context || "You are a helpful business assistant.",
+      persona: persona || "professional and friendly",
+      triggeredKeywords,
+      openaiApiKey: userOpenAIKey
+    });
+    
+    if (!aiResponse.success) {
+      return res.status(500).json({
+        success: false,
+        error: "Failed to generate AI response: " + aiResponse.error
+      });
+    }
+    
+    // Send AI response via WhatsApp if phone number provided
+    if (phone) {
+      const waapifyConfig = Storage.getWaapifyConfig(companyId, locationId);
+      if (waapifyConfig) {
+        const whatsappResult = await sendWhatsAppMessage(
+          phone,
+          aiResponse.response || '',
+          waapifyConfig.accessToken,
+          waapifyConfig.instanceId
+        );
+        
+        // Log the AI conversation
+        await logMessage(companyId, locationId, {
+          ghlMessageId: `ai_${Date.now()}`,
+          waapifyMessageId: whatsappResult.messageId || `ai_${Date.now()}`,
+          recipient: phone,
+          message: aiResponse.response || '',
+          type: 'text',
+          status: whatsappResult.success ? 'sent' : 'failed',
+          sentAt: new Date().toISOString()
+        });
+        
+        return res.json({
+          success: true,
+          triggered: true,
+          aiResponse: aiResponse.response,
+          triggeredKeywords,
+          whatsappSent: whatsappResult.success,
+          whatsappResult
+        });
+      }
+    }
+    
+    // Return AI response without sending via WhatsApp
+    res.json({
+      success: true,
+      triggered: true,
+      aiResponse: aiResponse.response,
+      triggeredKeywords,
+      whatsappSent: false,
+      message: "AI response generated but not sent (no WhatsApp config or phone)"
+    });
+    
+  } catch (error: any) {
+    console.error('AI Chatbot error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+});
+
+// Keyword trigger checker
+function checkKeywordTriggers(message: string, keywords: string[]): string[] {
+  const messageText = message.toLowerCase();
+  const triggered: string[] = [];
+  
+  for (const keyword of keywords) {
+    if (messageText.includes(keyword.toLowerCase())) {
+      triggered.push(keyword);
+    }
+  }
+  
+  return triggered;
+}
+
+// ChatGPT API integration
+async function generateChatGPTResponse({ customerMessage, context, persona, triggeredKeywords, openaiApiKey }: {
+  customerMessage: string;
+  context: string;
+  persona: string;
+  triggeredKeywords: string[];
+  openaiApiKey?: string;
+}): Promise<{ success: boolean; response?: string; error?: string }> {
+  try {
+    const axios = require('axios');
+    
+    // Use provided API key or fall back to environment variable
+    const apiKey = openaiApiKey || process.env.OPENAI_API_KEY;
+    if (!apiKey) {
+      return {
+        success: false,
+        error: "OpenAI API key not provided. Please configure your OpenAI API key in the external authentication."
+      };
+    }
+    
+    const systemPrompt = `${context}
+
+Your persona: ${persona}
+
+Triggered keywords: ${triggeredKeywords.join(', ')}
+
+Instructions:
+- Respond naturally and helpfully to the customer's message
+- Keep responses concise (under 200 words)
+- Use the provided context and persona
+- Be professional but friendly
+- Include relevant emojis when appropriate`;
+
+    const response = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-3.5-turbo',
+      messages: [
+        {
+          role: 'system',
+          content: systemPrompt
+        },
+        {
+          role: 'user',
+          content: customerMessage
+        }
+      ],
+      max_tokens: 300,
+      temperature: 0.7
+    }, {
+      headers: {
+        'Authorization': `Bearer ${apiKey}`,
+        'Content-Type': 'application/json'
+      }
+    });
+    
+    const aiResponse = response.data.choices[0].message.content.trim();
+    
+    return {
+      success: true,
+      response: aiResponse
+    };
+    
+  } catch (error: any) {
+    console.error('ChatGPT API error:', error);
+    return {
+      success: false,
+      error: error.response?.data?.error?.message || error.message
+    };
+  }
+}
+
+// Configure AI Chatbot Settings
+app.post("/api/ai-chatbot/configure", async (req: Request, res: Response) => {
+  const { companyId, locationId, config } = req.body;
+  
+  if (!companyId || !locationId || !config) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+  
+  try {
+    // Save AI chatbot configuration
+    Storage.saveAIChatbotConfig(companyId, locationId, config);
+    
+    res.json({
+      success: true,
+      message: "AI Chatbot configuration saved",
+      config
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get AI Chatbot Settings
+app.get("/api/ai-chatbot/config", async (req: Request, res: Response) => {
+  const { companyId, locationId } = req.query as { companyId: string; locationId: string };
+  
+  if (!companyId || !locationId) {
+    return res.status(400).json({ error: "Missing companyId or locationId" });
+  }
+  
+  try {
+    const config = Storage.getAIChatbotConfig(companyId, locationId);
+    
+    res.json({
+      success: true,
+      config: config || {
+        enabled: false,
+        keywords: [],
+        context: "You are a helpful business assistant.",
+        persona: "professional and friendly"
+      }
+    });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+/* -------------------- Additional Waapify API Endpoints -------------------- */
+
+// Get QR Code for WhatsApp login
+app.get("/api/waapify/qr-code", async (req: Request, res: Response) => {
+  const { instance_id, access_token } = req.query as { instance_id: string; access_token: string };
+  
+  if (!instance_id || !access_token) {
+    return res.status(400).json({ error: "Missing instance_id or access_token" });
+  }
+  
+  try {
+    const axios = require('axios');
+    const response = await axios.get(`https://stag.waapify.com/api/getqrcode.php`, {
+      params: { instance_id, access_token }
+    });
+    
+    res.json(response.data);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Reboot WhatsApp instance
+app.post("/api/waapify/reboot", async (req: Request, res: Response) => {
+  const { instance_id, access_token } = req.body;
+  
+  if (!instance_id || !access_token) {
+    return res.status(400).json({ error: "Missing instance_id or access_token" });
+  }
+  
+  try {
+    const axios = require('axios');
+    const response = await axios.get(`https://stag.waapify.com/api/reboot.php`, {
+      params: { instance_id, access_token }
+    });
+    
+    res.json(response.data);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Send Group Message
+app.post("/api/waapify/send-group", async (req: Request, res: Response) => {
+  const { group_id, message, type = "text", media_url, filename, instance_id, access_token } = req.body;
+  
+  if (!group_id || !message || !instance_id || !access_token) {
+    return res.status(400).json({ error: "Missing required fields" });
+  }
+  
+  try {
+    const axios = require('axios');
+    const params: any = {
+      group_id,
+      type,
+      message,
+      instance_id,
+      access_token
+    };
+    
+    if (type === 'media' && media_url) {
+      params.media_url = media_url;
+      if (filename) params.filename = filename;
+    }
+    
+    const response = await axios.get(`https://stag.waapify.com/api/sendgroupmsg.php`, {
+      params
+    });
+    
+    res.json(response.data);
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// Get Message Logs
+app.get("/api/message-logs", async (req: Request, res: Response) => {
+  const { companyId, locationId } = req.query as { companyId: string; locationId: string };
+  
+  if (!companyId || !locationId) {
+    return res.status(400).json({ error: "Missing companyId or locationId" });
+  }
+  
+  const key = `${companyId}_${locationId}`;
+  const logs = messageLogs.get(key) || [];
+  
+  res.json({
+    success: true,
+    logs: logs.slice(-50), // Return last 50 messages
+    total: logs.length
+  });
+});
+
+// Check Message Status
+app.get("/api/message-status/:messageId", async (req: Request, res: Response) => {
+  const { messageId } = req.params;
+  const { companyId, locationId } = req.query as { companyId: string; locationId: string };
+  
+  if (!companyId || !locationId) {
+    return res.status(400).json({ error: "Missing companyId or locationId" });
+  }
+  
+  const key = `${companyId}_${locationId}`;
+  const logs = messageLogs.get(key) || [];
+  const messageLog = logs.find(log => 
+    log.ghlMessageId === messageId || log.waapifyMessageId === messageId
+  );
+  
+  if (!messageLog) {
+    return res.status(404).json({ error: "Message not found" });
+  }
+  
+  res.json({
+    success: true,
+    message: messageLog
+  });
+});
 
 /* -------------------- Start server -------------------- */
 app.listen(port, () => console.log(`GHL app listening on port ${port}`));
