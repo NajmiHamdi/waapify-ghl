@@ -918,13 +918,39 @@ app.post("/action/send-whatsapp-text", async (req: Request, res: Response) => {
   console.log('Raw Body:', JSON.stringify(req.body, null, 2));
   
   try {
-    const { number, message, instance_id, access_token, type = "text" } = req.body;
+    const { number, message, instance_id, access_token, locationId, companyId, type = "text" } = req.body;
     
-    if (!number || !message || !instance_id || !access_token) {
-      console.log('Missing fields:', { number: !!number, message: !!message, instance_id: !!instance_id, access_token: !!access_token });
+    let finalInstanceId = instance_id;
+    let finalAccessToken = access_token;
+    
+    // If credentials not provided directly, try to get from stored config
+    if ((!instance_id || !access_token) && locationId && companyId) {
+      console.log('Trying to get stored Waapify config for:', { locationId, companyId });
+      const waapifyConfig = Storage.getWaapifyConfig(companyId, locationId);
+      if (waapifyConfig) {
+        finalInstanceId = finalInstanceId || waapifyConfig.instanceId;
+        finalAccessToken = finalAccessToken || waapifyConfig.accessToken;
+        console.log('Found stored config:', { instanceId: !!finalInstanceId, accessToken: !!finalAccessToken });
+      }
+    }
+    
+    if (!number || !message || !finalInstanceId || !finalAccessToken) {
+      console.log('Missing fields after config lookup:', { 
+        number: !!number, 
+        message: !!message, 
+        instance_id: !!finalInstanceId, 
+        access_token: !!finalAccessToken 
+      });
       return res.status(400).json({ 
-        error: "Missing required fields",
-        received: { number: !!number, message: !!message, instance_id: !!instance_id, access_token: !!access_token }
+        error: "Missing required fields. Either provide instance_id & access_token directly, or ensure locationId & companyId are provided with stored Waapify config.",
+        received: { 
+          number: !!number, 
+          message: !!message, 
+          instance_id: !!finalInstanceId, 
+          access_token: !!finalAccessToken,
+          locationId: !!locationId,
+          companyId: !!companyId
+        }
       });
     }
     
@@ -934,7 +960,7 @@ app.post("/action/send-whatsapp-text", async (req: Request, res: Response) => {
     
     console.log('Cleaned data:', { cleanNumber, cleanMessage: cleanMessage.substring(0, 50) + '...' });
     
-    const result = await sendWhatsAppMessage(cleanNumber, cleanMessage, access_token, instance_id, type);
+    const result = await sendWhatsAppMessage(cleanNumber, cleanMessage, finalAccessToken, finalInstanceId, type);
     
     console.log('WhatsApp result:', result);
     res.json(result);
