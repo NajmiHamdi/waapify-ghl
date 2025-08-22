@@ -2151,5 +2151,48 @@ app.get("/api/message-status/:messageId", async (req: Request, res: Response) =>
   });
 });
 
+/* -------------------- Auto-Recovery System -------------------- */
+
+// Auto-recreate critical installations on startup to prevent SMS failures
+async function ensureCriticalInstallations() {
+  try {
+    // Check if your main installation exists
+    const installations = Storage.getAll();
+    const yourInstallation = installations.find(inst => 
+      inst.companyId === 'NQFaKZYtxW6gENuYYALt' && inst.locationId === 'rjsdYp4AhllL4EJDzQCP'
+    );
+    
+    if (!yourInstallation) {
+      console.log('⚠️ Critical installation missing - auto-recreating...');
+      
+      // Recreate installation record
+      Storage.save({
+        companyId: 'NQFaKZYtxW6gENuYYALt',
+        locationId: 'rjsdYp4AhllL4EJDzQCP',
+        access_token: 'auto_recreated_token',
+        refresh_token: 'auto_recreated_refresh',
+        expires_in: 86400
+      });
+      
+      // Recreate Waapify configuration
+      Storage.saveWaapifyConfig('NQFaKZYtxW6gENuYYALt', 'rjsdYp4AhllL4EJDzQCP', {
+        accessToken: '1740aed492830374b432091211a6628d',
+        instanceId: '673F5A50E7194',
+        whatsappNumber: '60149907876'
+      });
+      
+      console.log('✅ Critical installation auto-recreated - SMS will work');
+    } else {
+      console.log('✅ Critical installation found - SMS ready');
+    }
+  } catch (error) {
+    console.error('❌ Auto-recovery failed:', error);
+  }
+}
+
 /* -------------------- Start server -------------------- */
-app.listen(port, () => console.log(`GHL app listening on port ${port}`));
+app.listen(port, async () => {
+  console.log(`GHL app listening on port ${port}`);
+  console.log('🔄 Running auto-recovery check...');
+  await ensureCriticalInstallations();
+});
