@@ -1028,10 +1028,25 @@ app.post("/action/send-whatsapp-media", async (req: Request, res: Response) => {
 
 // Check WhatsApp Phone Number
 app.post("/action/check-whatsapp-phone", async (req: Request, res: Response) => {
-  const { number, instance_id, access_token } = req.body;
+  const { number, instance_id, access_token, locationId, companyId } = req.body;
   
-  if (!number || !instance_id || !access_token) {
-    return res.status(400).json({ error: "Missing required fields" });
+  let finalInstanceId = instance_id;
+  let finalAccessToken = access_token;
+  
+  // If credentials not provided directly, try to get from stored config
+  if ((!instance_id || !access_token) && locationId && companyId) {
+    console.log('Trying to get stored Waapify config for check number:', { locationId, companyId });
+    const waapifyConfig = Storage.getWaapifyConfig(companyId, locationId);
+    if (waapifyConfig) {
+      finalInstanceId = finalInstanceId || waapifyConfig.instanceId;
+      finalAccessToken = finalAccessToken || waapifyConfig.accessToken;
+    }
+  }
+  
+  if (!number || !finalInstanceId || !finalAccessToken) {
+    return res.status(400).json({ 
+      error: "Missing required fields. Either provide instance_id & access_token directly, or ensure locationId & companyId are provided with stored Waapify config." 
+    });
   }
   
   try {
@@ -1042,8 +1057,8 @@ app.post("/action/check-whatsapp-phone", async (req: Request, res: Response) => 
       params: {
         number: cleanNumber,
         type: 'check_phone',
-        instance_id: instance_id,
-        access_token: access_token
+        instance_id: finalInstanceId,
+        access_token: finalAccessToken
       }
     });
     
