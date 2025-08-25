@@ -1,6 +1,6 @@
 import qs from "qs";
 import axios, { AxiosRequestConfig, InternalAxiosRequestConfig } from "axios";
-import { createDecipheriv, createHash } from "node:crypto";
+import { createDecipheriv, createHash } from "crypto";
 import { Storage } from "./storage";
 
 export enum TokenType {
