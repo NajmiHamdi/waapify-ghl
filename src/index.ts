@@ -62,22 +62,58 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
     const installations = await Database.getAllInstallations();
     console.log("=== All installations ===", installations);
 
-    // After OAuth success, check if user needs to configure Waapify credentials
-    const latestInstallation = installations[installations.length - 1];
+    // OAuth happens before INSTALL webhook, so we need to wait or handle differently
+    // For now, always redirect to external auth trigger since installation will happen via webhook
     
-    if (latestInstallation) {
-      // Check if Waapify config exists for this installation
-      const waapifyConfig = await Database.getWaapifyConfig(latestInstallation.company_id, latestInstallation.location_id || '');
-      
-      if (!waapifyConfig || !waapifyConfig.access_token || waapifyConfig.access_token === 'pending_external_auth') {
-        console.log('=== OAuth Success - Redirecting to External Auth Configuration ===');
-        
-        // Redirect to our configuration form
-        const configUrl = `/config/${latestInstallation.company_id}/${latestInstallation.location_id}`;
-        console.log(`Redirecting to config form: ${configUrl}`);
-        return res.redirect(configUrl);
-      }
+    // Get company and location from OAuth response or query params
+    const companyId = req.query.companyId as string;
+    const locationId = req.query.locationId as string;
+    
+    if (companyId && locationId) {
+      console.log('=== OAuth Success - Redirecting to External Auth Configuration ===');
+      const configUrl = `/config/${companyId}/${locationId}`;
+      console.log(`Redirecting to config form: ${configUrl}`);
+      return res.redirect(configUrl);
     }
+    
+    // Fallback: redirect to a generic waiting page that will redirect to external auth
+    console.log('=== OAuth Success - Triggering External Auth Flow ===');
+    const waitingHTML = `
+      <!DOCTYPE html>
+      <html>
+      <head>
+          <title>Setting up Waapify...</title>
+          <style>
+              body { font-family: Arial, sans-serif; text-align: center; padding: 50px; background: #f5f5f5; }
+              .container { max-width: 500px; margin: 0 auto; background: white; padding: 40px; border-radius: 10px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+              h1 { color: #25D366; margin-bottom: 20px; }
+              .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #25D366; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
+              @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+              p { color: #666; line-height: 1.6; }
+              .button { display: inline-block; background: #25D366; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 20px; }
+              .button:hover { background: #128C7E; }
+          </style>
+      </head>
+      <body>
+          <div class="container">
+              <h1>🚀 Almost Ready!</h1>
+              <div class="spinner"></div>
+              <p>Setting up your Waapify integration...</p>
+              <p>You'll need to configure your Waapify credentials to complete the setup.</p>
+              <a href="https://app.gohighlevel.com/marketplace/apps" class="button">Continue Setup in GHL</a>
+          </div>
+          
+          <script>
+              // Try to trigger external auth or redirect back to GHL after a moment
+              setTimeout(() => {
+                  window.location.href = 'https://app.gohighlevel.com/marketplace/apps';
+              }, 3000);
+          </script>
+      </body>
+      </html>
+    `;
+    
+    return res.send(waitingHTML);
     
     console.log('=== OAuth Success - Redirecting to GHL Dashboard ===');
     res.redirect('https://app.gohighlevel.com/');
@@ -562,11 +598,28 @@ app.get("/api/phone-numbers", async (req: Request, res: Response) => {
     const waapifyConfig = await Database.getWaapifyConfig(companyId, locationId);
     
     if (!waapifyConfig) {
-      return res.json({
-        phoneNumbers: [],
-        success: false,
-        message: "Waapify not configured"
-      });
+      // Check if installation exists but Waapify not configured
+      const installation = await Database.getInstallation(companyId, locationId);
+      
+      if (installation) {
+        // Installation exists but Waapify not configured - trigger external auth
+        return res.status(401).json({
+          phoneNumbers: [],
+          success: false,
+          message: "External authentication required",
+          error: "REQUIRES_EXTERNAL_AUTH",
+          authType: "external",
+          authUrl: "https://waaghl.waapify.com/external-auth",
+          configUrl: `https://waaghl.waapify.com/config/${companyId}/${locationId}`
+        });
+      } else {
+        // No installation found
+        return res.json({
+          phoneNumbers: [],
+          success: false,
+          message: "Installation not found - please install the app first"
+        });
+      }
     }
     
     // Return WhatsApp number as available phone number
@@ -628,14 +681,15 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
           const installationId = await Database.saveInstallation(installationData);
           console.log(`✅ Installation saved: ${installationId} for company: ${companyId}, location: ${locationId}`);
           
-          return res.json({ 
+          // Return response that indicates external auth is needed
+          return res.status(202).json({ 
             success: true, 
             message: "Installation successful - External authentication required",
             installationId: installationId,
-            requiresAuth: true,
-            authType: "external",
-            authUrl: "https://waaghl.waapify.com/external-auth",
-            nextStep: "external_auth"
+            status: "pending_auth",
+            requires_external_auth: true,
+            auth_url: "https://waaghl.waapify.com/external-auth",
+            redirect_url: `https://waaghl.waapify.com/config/${companyId}/${locationId}`
           });
           
         case 'EXTERNAL_AUTH_CONNECTED':
