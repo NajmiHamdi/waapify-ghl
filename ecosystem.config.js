@@ -3,11 +3,19 @@ module.exports = {
   apps: [{
     name: 'waapify-ghl',
     script: 'dist/index.js',
+    cwd: '/home/runcloud/webapps/waapify-ghl',
     instances: 1,
-    exec_mode: 'cluster',
+    exec_mode: 'fork',
     env: {
       NODE_ENV: 'production',
-      PORT: 3000
+      PORT: 3000,
+      DB_HOST: 'localhost',
+      DB_USER: 'waapify_user', 
+      DB_PASSWORD: '5IYUhdp:+i~}nYpbEPt5OlLM7d4^*6D',
+      DB_NAME: 'waapify_ghl',
+      GHL_CLIENT_ID: '68a2e8f358c5af6573ce7c52-meh8wdt6',
+      GHL_CLIENT_SECRET: '2bada39f-520e-4ba0-afe9-b1817dacc6df',
+      GHL_REDIRECT_URI: 'https://waaghl.waapify.com/authorize-handler'
     },
     error_file: './logs/err.log',
     out_file: './logs/out.log',
