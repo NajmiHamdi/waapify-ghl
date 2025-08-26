@@ -9,7 +9,7 @@ module.exports = {
     env: {
       NODE_ENV: 'production',
       PORT: 3000,
-      DB_HOST: '127.0.0.1',
+      DB_HOST: 'localhost',
       DB_USER: 'waapify_fresh', 
       DB_PASSWORD: 'WaapifyFresh2024!@#',
       DB_NAME: 'waapify_ghl_fresh',

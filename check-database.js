@@ -7,7 +7,7 @@ async function checkDatabase() {
     
     // Database configuration
     const DB_CONFIG = {
-      host: process.env.DB_HOST || '127.0.0.1',
+      host: process.env.DB_HOST || 'localhost',
       port: 3306,
       user: process.env.DB_USER || 'waapify_fresh',
       password: process.env.DB_PASSWORD || 'WaapifyFresh2024!@#',
