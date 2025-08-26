@@ -7,9 +7,9 @@ async function checkProductionDatabase() {
     
     const DB_CONFIG = {
       host: process.env.DB_HOST || 'localhost',
-      user: process.env.DB_USER || 'waapify_prod',
-      password: process.env.DB_PASSWORD || 'WaaProd2024#SecurePass!',
-      database: process.env.DB_NAME || 'waapify_production'
+      user: process.env.DB_USER || 'waapify_user',
+      password: process.env.DB_PASSWORD || 'QyXnDWo*OPoqCV#sW+++k~eXU?RCub++',
+      database: process.env.DB_NAME || 'waapify_ghl'
     };
     
     console.log('Production Database config:', {

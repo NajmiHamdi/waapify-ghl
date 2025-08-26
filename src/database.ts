@@ -8,9 +8,9 @@ import mysql from 'mysql2/promise';
 // Database configuration
 const DB_CONFIG = {
   host: process.env.DB_HOST || 'localhost',
-  user: process.env.DB_USER || 'waapify_prod',
-  password: process.env.DB_PASSWORD || 'WaaProd2024#SecurePass!',
-  database: process.env.DB_NAME || 'waapify_production',
+  user: process.env.DB_USER || 'waapify_user',
+  password: process.env.DB_PASSWORD || 'QyXnDWo*OPoqCV#sW+++k~eXU?RCub++',
+  database: process.env.DB_NAME || 'waapify_ghl',
   connectionLimit: 10
 };
 
@@ -249,15 +249,15 @@ export class Database {
         messageLog.installation_id,
         messageLog.company_id,
         messageLog.location_id,
-        messageLog.ghl_message_id,
-        messageLog.waapify_message_id,
+        messageLog.ghl_message_id || null,
+        messageLog.waapify_message_id || null,
         messageLog.recipient,
         messageLog.message,
         messageLog.message_type,
-        messageLog.media_url,
-        messageLog.filename,
+        messageLog.media_url || null,
+        messageLog.filename || null,
         messageLog.status,
-        messageLog.error_message
+        messageLog.error_message || null
       ]);
     } finally {
       connection.release();

@@ -409,8 +409,21 @@ app.post("/external-auth", async (req: Request, res: Response) => {
       if (locationId && companyId) {
         console.log('=== Storing Waapify Config ===', { locationId, companyId, instance_id });
         
-        // Get installation to get the installation_id
-        const installation = await Database.getInstallation(companyId, locationId);
+        // Get installation or create if doesn't exist
+        let installation = await Database.getInstallation(companyId, locationId);
+        if (!installation) {
+          // Create installation for external auth
+          const newInstallation: Installation = {
+            company_id: companyId,
+            location_id: locationId,
+            access_token: 'external_auth_token',
+            refresh_token: 'external_auth_refresh',
+            expires_in: 86400
+          };
+          const installationId = await Database.saveInstallation(newInstallation);
+          installation = { ...newInstallation, id: installationId };
+        }
+        
         if (installation && installation.id) {
           const waapifyConfig: WaapifyConfig = {
             installation_id: installation.id,
@@ -1143,6 +1156,68 @@ app.post("/action/send-whatsapp-text", async (req: Request, res: Response) => {
     });
     
     const result = await sendWhatsAppMessage(formattedNumber, cleanMessage, finalAccessToken, finalInstanceId, type);
+    
+    // Log message to database and send GHL callback if successful
+    if (result.success && locationId && companyId) {
+      try {
+        const installation = await Database.getInstallation(companyId, locationId);
+        if (installation && installation.id) {
+          const ghlMessageId = `text_${Date.now()}`;
+          const waapifyMessageId = result.messageId || `wa_${Date.now()}`;
+          
+          // Log to database
+          await Database.logMessage({
+            installation_id: installation.id,
+            company_id: companyId,
+            location_id: locationId,
+            ghl_message_id: ghlMessageId,
+            waapify_message_id: waapifyMessageId,
+            recipient: formattedNumber,
+            message: cleanMessage,
+            message_type: type === 'media' ? 'media' : 'text',
+            media_url: undefined,
+            filename: undefined,
+            status: 'sent',
+            error_message: undefined
+          });
+          console.log('✅ Message logged to database');
+          
+          // Send delivery callback to GHL
+          try {
+            const callbackUrl = `https://services.leadconnectorhq.com/hooks/sms/delivery`;
+            const callbackData = {
+              locationId: locationId,
+              messageId: ghlMessageId,
+              status: 'delivered',
+              providerId: 'waapify-sms', 
+              timestamp: new Date().toISOString(),
+              phoneNumber: formattedNumber
+            };
+            
+            console.log('🔄 Sending GHL delivery callback:', callbackData);
+            
+            const callbackResponse = await fetch(callbackUrl, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${installation.access_token}`
+              },
+              body: JSON.stringify(callbackData)
+            });
+            
+            if (callbackResponse.ok) {
+              console.log('✅ GHL delivery callback sent successfully');
+            } else {
+              console.log('⚠️ GHL delivery callback failed:', callbackResponse.status, await callbackResponse.text());
+            }
+          } catch (callbackError) {
+            console.error('❌ Failed to send GHL callback:', callbackError);
+          }
+        }
+      } catch (logError) {
+        console.error('❌ Failed to log message:', logError);
+      }
+    }
     
     console.log('WhatsApp result:', result);
     res.json(result);
