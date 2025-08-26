@@ -9,9 +9,9 @@ async function checkDatabase() {
     const DB_CONFIG = {
       host: process.env.DB_HOST || '127.0.0.1',
       port: 3306,
-      user: process.env.DB_USER || 'root',
-      password: process.env.DB_PASSWORD || '',
-      database: process.env.DB_NAME || 'waapify_ghl'
+      user: process.env.DB_USER || 'waapify_fresh',
+      password: process.env.DB_PASSWORD || 'WaapifyFresh2024!@#',
+      database: process.env.DB_NAME || 'waapify_ghl_fresh'
     };
     
     console.log('Database config:', {
