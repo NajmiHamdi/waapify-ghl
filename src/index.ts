@@ -368,6 +368,29 @@ app.post("/external-auth", async (req: Request, res: Response) => {
     // Handle GHL installation process - if no credentials provided but locationId present
     if (req.body.locationId && !req.body.access_token) {
       console.log('=== GHL Installation Process - Providing Default Success Response ===');
+      
+      // Extract locationId and companyId
+      const locationId = Array.isArray(req.body.locationId) ? req.body.locationId[0] : req.body.locationId;
+      const companyId = req.body.companyId;
+      
+      // This is initial installation - save basic installation record
+      if (locationId && companyId) {
+        try {
+          const installationData = {
+            company_id: companyId,
+            location_id: locationId,
+            access_token: 'pending_external_auth',
+            refresh_token: 'pending_external_auth',
+            expires_in: 3600,
+          };
+          
+          const installationId = await Database.saveInstallation(installationData);
+          console.log(`✅ Basic installation saved: ${installationId} for External Auth flow`);
+        } catch (error) {
+          console.error('❌ Failed to save basic installation:', error);
+        }
+      }
+      
       return res.json({
         success: true,
         message: "Installation process detected - external auth will be configured later",
@@ -376,7 +399,9 @@ app.post("/external-auth", async (req: Request, res: Response) => {
           instance_id: "pending",
           whatsapp_number: "pending",
           status: "installation_pending",
-          provider: "waapify"
+          provider: "waapify",
+          locationId: locationId,
+          companyId: companyId
         }
       });
     }
@@ -663,6 +688,87 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
       success: false,
       error: error.message,
       messageId: messageId
+    });
+  }
+});
+
+/* -------------------- GHL Installation & General Webhook Handler -------------------- */
+app.post("/webhook/ghl", async (req: Request, res: Response) => {
+  console.log("=== GHL Webhook Received ===", JSON.stringify(req.body, null, 2));
+  
+  const { type, locationId, companyId, userId, companyName } = req.body;
+  
+  try {
+    // Handle different webhook types
+    switch (type) {
+      case 'INSTALL':
+        console.log('=== Processing INSTALL webhook ===');
+        
+        if (!locationId || !companyId) {
+          return res.status(400).json({ error: "Missing locationId or companyId for installation" });
+        }
+        
+        // Save installation to database
+        const installationData = {
+          company_id: companyId,
+          location_id: locationId,
+          access_token: 'pending_oauth', // Will be updated via OAuth
+          refresh_token: 'pending_oauth',
+          expires_in: 3600,
+        };
+        
+        const installationId = await Database.saveInstallation(installationData);
+        console.log(`✅ Installation saved: ${installationId} for company: ${companyId}, location: ${locationId}`);
+        
+        res.json({ 
+          success: true, 
+          message: "Installation webhook processed",
+          installationId: installationId
+        });
+        break;
+        
+      case 'EXTERNAL_AUTH_CONNECTED':
+        console.log('=== Processing EXTERNAL_AUTH_CONNECTED webhook ===');
+        res.json({ 
+          success: true, 
+          message: "External auth connected webhook received" 
+        });
+        break;
+        
+      case 'UNINSTALL':
+        console.log('=== Processing UNINSTALL webhook ===');
+        
+        if (locationId && companyId) {
+          // Remove installation and configs
+          const installation = await Database.getInstallation(companyId, locationId);
+          if (installation) {
+            // Note: Database foreign keys will cascade delete waapify_configs
+            console.log(`🗑️ Uninstalling for company: ${companyId}, location: ${locationId}`);
+          }
+        }
+        
+        res.json({ 
+          success: true, 
+          message: "Uninstall webhook processed" 
+        });
+        break;
+        
+      default:
+        console.log(`⚠️ Unknown webhook type: ${type}`);
+        res.json({ 
+          success: true, 
+          message: "Webhook received but type not specifically handled",
+          type: type 
+        });
+        break;
+    }
+    
+  } catch (error: any) {
+    console.error("GHL webhook error:", error);
+    res.status(500).json({ 
+      success: false, 
+      error: error.message,
+      type: type 
     });
   }
 });
