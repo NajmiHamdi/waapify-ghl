@@ -1,4 +1,4 @@
-// PM2 ecosystem configuration for RunCloud deployment
+// PM2 ecosystem configuration for production deployment
 module.exports = {
   apps: [{
     name: 'waapify-ghl',
@@ -8,14 +8,16 @@ module.exports = {
     exec_mode: 'fork',
     env: {
       NODE_ENV: 'production',
-      PORT: 3000,
+      PORT: 3001,
       DB_HOST: 'localhost',
-      DB_USER: 'waapify_fresh', 
-      DB_PASSWORD: 'WaapifyFresh2024!@#',
-      DB_NAME: 'waapify_ghl_fresh',
+      DB_USER: 'waapify_user',
+      DB_PASSWORD: 'QyXnDWo*OPoqCV#sW+++k~eXU?RCub++',
+      DB_NAME: 'waapify_ghl',
       GHL_CLIENT_ID: '68a2e8f358c5af6573ce7c52-meh8wdt6',
       GHL_CLIENT_SECRET: '2bada39f-520e-4ba0-afe9-b1817dacc6df',
-      GHL_REDIRECT_URI: 'https://waaghl.waapify.com/authorize-handler'
+      GHL_REDIRECT_URI: 'https://waaghl.waapify.com/authorize-handler',
+      SESSION_SECRET: 'WaapifyProd2024SessionSecret#NewDeployment!@#',
+      JWT_SECRET: 'WaapifyProd2024JWTSecret#FreshDeploy@$%'
     },
     error_file: './logs/err.log',
     out_file: './logs/out.log',
