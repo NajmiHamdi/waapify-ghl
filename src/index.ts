@@ -2354,6 +2354,129 @@ app.get("/admin/backup", async (req: Request, res: Response) => {
   }
 });
 
+/* -------------------- GHL Marketplace Webhook Handlers -------------------- */
+
+// GHL Webhook: App Installation
+app.post("/webhook/install", async (req: Request, res: Response) => {
+  console.log('🔗 === GHL INSTALL WEBHOOK ===');
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('Body:', JSON.stringify(req.body, null, 2));
+  
+  try {
+    const { companyId, locationId, userId, userEmail } = req.body;
+    
+    if (!companyId) {
+      console.log('❌ Missing companyId in install webhook');
+      return res.status(400).json({ error: "Missing companyId" });
+    }
+    
+    // Create installation record
+    const newInstallation: Installation = {
+      company_id: companyId,
+      location_id: locationId || null,
+      access_token: 'webhook_install_token', // This will be updated during OAuth
+      refresh_token: 'webhook_install_refresh',
+      expires_in: 86400,
+      expires_at: undefined
+    };
+    
+    // Check if installation already exists
+    const existingInstallation = await Database.getInstallation(companyId, locationId);
+    
+    if (existingInstallation) {
+      console.log('📦 Installation already exists, updating...');
+      await Database.updateInstallation(existingInstallation.id!, {
+        updated_at: new Date()
+      });
+    } else {
+      console.log('📦 Creating new installation...');
+      const installationId = await Database.saveInstallation(newInstallation);
+      console.log('✅ Installation saved with ID:', installationId);
+    }
+    
+    res.json({ 
+      success: true, 
+      message: "Installation webhook processed successfully",
+      companyId,
+      locationId
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Install webhook error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GHL Webhook: App Uninstallation
+app.post("/webhook/uninstall", async (req: Request, res: Response) => {
+  console.log('🗑️ === GHL UNINSTALL WEBHOOK ===');
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('Body:', JSON.stringify(req.body, null, 2));
+  
+  try {
+    const { companyId, locationId } = req.body;
+    
+    if (!companyId) {
+      console.log('❌ Missing companyId in uninstall webhook');
+      return res.status(400).json({ error: "Missing companyId" });
+    }
+    
+    // Find and remove installation
+    const installation = await Database.getInstallation(companyId, locationId);
+    
+    if (installation) {
+      console.log('🗑️ Removing installation and related data...');
+      
+      // Remove Waapify config if exists
+      const waapifyConfig = await Database.getWaapifyConfig(companyId, locationId || '');
+      if (waapifyConfig) {
+        await Database.deleteWaapifyConfig(companyId, locationId || '');
+        console.log('✅ Waapify config deleted');
+      }
+      
+      // Remove AI config if exists
+      const aiConfig = await Database.getAIConfig(companyId, locationId || '');
+      if (aiConfig) {
+        await Database.deleteAIConfig(companyId, locationId || '');
+        console.log('✅ AI config deleted');
+      }
+      
+      // Note: We don't delete the installation record for audit purposes
+      // Instead, we could mark it as uninstalled
+      console.log('📝 Installation marked as uninstalled (kept for audit)');
+      
+    } else {
+      console.log('⚠️ Installation not found for uninstall');
+    }
+    
+    res.json({ 
+      success: true, 
+      message: "Uninstall webhook processed successfully",
+      companyId,
+      locationId
+    });
+    
+  } catch (error: any) {
+    console.error('❌ Uninstall webhook error:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
+
+// GHL Webhook: External Auth Connected
+app.post("/webhook/external-auth-connected", async (req: Request, res: Response) => {
+  console.log('🔗 === GHL EXTERNAL_AUTH_CONNECTED WEBHOOK ===');
+  console.log('Headers:', JSON.stringify(req.headers, null, 2));
+  console.log('Body:', JSON.stringify(req.body, null, 2));
+  
+  // This webhook is fired when external auth is completed
+  // The actual credential handling is done in the /external-auth endpoint
+  
+  res.json({ 
+    success: true, 
+    message: "External auth connected webhook acknowledged"
+  });
+});
+
 /* -------------------- Start server -------------------- */
 app.listen(port, async () => {
   console.log(`GHL app listening on port ${port}`);

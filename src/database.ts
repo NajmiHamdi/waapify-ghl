@@ -407,6 +407,68 @@ export class Database {
   }
 
   // ========================================
+  // UPDATE & DELETE OPERATIONS  
+  // ========================================
+  
+  // Update installation
+  static async updateInstallation(id: number, updates: Partial<Installation>): Promise<boolean> {
+    const connection = await pool.getConnection();
+    try {
+      const fields = Object.keys(updates).map(key => `${key} = ?`).join(', ');
+      const values = Object.values(updates);
+      
+      await connection.execute(`
+        UPDATE installations 
+        SET ${fields}, updated_at = CURRENT_TIMESTAMP
+        WHERE id = ?
+      `, [...values, id]);
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Error updating installation:', error);
+      return false;
+    } finally {
+      connection.release();
+    }
+  }
+  
+  // Delete Waapify config
+  static async deleteWaapifyConfig(companyId: string, locationId: string): Promise<boolean> {
+    const connection = await pool.getConnection();
+    try {
+      await connection.execute(`
+        DELETE FROM waapify_configs 
+        WHERE company_id = ? AND location_id = ?
+      `, [companyId, locationId]);
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Error deleting Waapify config:', error);
+      return false;
+    } finally {
+      connection.release();
+    }
+  }
+  
+  // Delete AI config
+  static async deleteAIConfig(companyId: string, locationId: string): Promise<boolean> {
+    const connection = await pool.getConnection();
+    try {
+      await connection.execute(`
+        DELETE FROM ai_configs 
+        WHERE company_id = ? AND location_id = ?
+      `, [companyId, locationId]);
+      
+      return true;
+    } catch (error) {
+      console.error('❌ Error deleting AI config:', error);
+      return false;
+    } finally {
+      connection.release();
+    }
+  }
+
+  // ========================================
   // ANALYTICS & REPORTING
   // ========================================
 
