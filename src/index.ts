@@ -62,9 +62,22 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
     const installations = await Database.getAllInstallations();
     console.log("=== All installations ===", installations);
 
-    // DISABLED: Popup configuration (using external auth instead)
-    // Redirect directly to GHL dashboard since external auth handles credentials
+    // After OAuth success, check if user needs to configure Waapify credentials
     const latestInstallation = installations[installations.length - 1];
+    
+    if (latestInstallation) {
+      // Check if Waapify config exists for this installation
+      const waapifyConfig = await Database.getWaapifyConfig(latestInstallation.company_id, latestInstallation.location_id || '');
+      
+      if (!waapifyConfig || !waapifyConfig.access_token || waapifyConfig.access_token === 'pending_external_auth') {
+        console.log('=== OAuth Success - Redirecting to External Auth Configuration ===');
+        
+        // Redirect to our configuration form
+        const configUrl = `/config/${latestInstallation.company_id}/${latestInstallation.location_id}`;
+        console.log(`Redirecting to config form: ${configUrl}`);
+        return res.redirect(configUrl);
+      }
+    }
     
     console.log('=== OAuth Success - Redirecting to GHL Dashboard ===');
     res.redirect('https://app.gohighlevel.com/');
@@ -617,8 +630,12 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
           
           return res.json({ 
             success: true, 
-            message: "Installation webhook processed",
-            installationId: installationId
+            message: "Installation successful - External authentication required",
+            installationId: installationId,
+            requiresAuth: true,
+            authType: "external",
+            authUrl: "https://waaghl.waapify.com/external-auth",
+            nextStep: "external_auth"
           });
           
         case 'EXTERNAL_AUTH_CONNECTED':
