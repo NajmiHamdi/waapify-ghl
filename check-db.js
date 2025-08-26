@@ -6,7 +6,7 @@ async function checkDatabase() {
     console.log('🔍 Checking database connection...');
     
     const connection = await mysql.createConnection({
-      host: process.env.DB_HOST || 'localhost',
+      host: 'localhost', // Force localhost instead of 127.0.0.1
       user: process.env.DB_USER || 'waapify_user',
       password: process.env.DB_PASSWORD || 'QyXnDWo*OPoqCV#sW+++k~eXU?RCub++',
       database: process.env.DB_NAME || 'waapify_ghl'
