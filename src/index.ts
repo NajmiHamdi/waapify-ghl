@@ -419,8 +419,10 @@ app.post("/external-auth", async (req: Request, res: Response) => {
     return res.status(400).json({
       success: false,
       error: "Missing required fields: access_token, instance_id",
+      required_fields: ["access_token", "instance_id", "whatsapp_number (optional)"],
       received_fields: Object.keys(req.body),
-      received_data: req.body
+      received_data: req.body,
+      message: "Please fill out all required Waapify credentials in the marketplace form"
     });
   }
   
@@ -430,7 +432,9 @@ app.post("/external-auth", async (req: Request, res: Response) => {
     
     if (authResult.success) {
       // Store Waapify credentials for this locationId
-      const { locationId, companyId } = req.body;
+      const locationId = Array.isArray(req.body.locationId) ? req.body.locationId[0] : req.body.locationId;
+      const companyId = req.body.companyId;
+      
       if (locationId && companyId) {
         console.log('=== Storing Waapify Config ===', { locationId, companyId, instance_id });
         
@@ -583,6 +587,84 @@ app.get("/api/phone-numbers", async (req: Request, res: Response) => {
 app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
   console.log("=== Conversation Provider Webhook Received ===", JSON.stringify(req.body, null, 2));
   
+  // Check if this is a GHL installation webhook (not a message)
+  if (req.body.type === 'INSTALL' || req.body.type === 'EXTERNAL_AUTH_CONNECTED' || req.body.type === 'UNINSTALL') {
+    console.log(`=== Routing ${req.body.type} webhook to GHL handler ===`);
+    
+    const { type, locationId, companyId, userId, companyName } = req.body;
+    
+    try {
+      // Handle different webhook types
+      switch (type) {
+        case 'INSTALL':
+          console.log('=== Processing INSTALL webhook ===');
+          
+          if (!locationId || !companyId) {
+            return res.status(400).json({ error: "Missing locationId or companyId for installation" });
+          }
+          
+          // Save installation to database
+          const installationData = {
+            company_id: companyId,
+            location_id: locationId,
+            access_token: 'pending_oauth', // Will be updated via OAuth
+            refresh_token: 'pending_oauth',
+            expires_in: 3600,
+          };
+          
+          const installationId = await Database.saveInstallation(installationData);
+          console.log(`✅ Installation saved: ${installationId} for company: ${companyId}, location: ${locationId}`);
+          
+          return res.json({ 
+            success: true, 
+            message: "Installation webhook processed",
+            installationId: installationId
+          });
+          
+        case 'EXTERNAL_AUTH_CONNECTED':
+          console.log('=== Processing EXTERNAL_AUTH_CONNECTED webhook ===');
+          return res.json({ 
+            success: true, 
+            message: "External auth connected webhook received" 
+          });
+          
+        case 'UNINSTALL':
+          console.log('=== Processing UNINSTALL webhook ===');
+          
+          if (locationId && companyId) {
+            // Remove installation and configs
+            const installation = await Database.getInstallation(companyId, locationId);
+            if (installation) {
+              // Note: Database foreign keys will cascade delete waapify_configs
+              console.log(`🗑️ Uninstalling for company: ${companyId}, location: ${locationId}`);
+            }
+          }
+          
+          return res.json({ 
+            success: true, 
+            message: "Uninstall webhook processed" 
+          });
+          
+        default:
+          console.log(`⚠️ Unknown GHL webhook type: ${type}`);
+          return res.json({ 
+            success: true, 
+            message: "GHL webhook received but type not specifically handled",
+            type: type 
+          });
+      }
+      
+    } catch (error: any) {
+      console.error("GHL webhook error:", error);
+      return res.status(500).json({ 
+        success: false, 
+        error: error.message,
+        type: type 
+      });
+    }
+  }
+  
+  // Handle regular message webhooks
   const { contactId, locationId, type, phone, message, messageId, attachments } = req.body;
   
   if (!contactId || !locationId || !type) {
