@@ -97,7 +97,12 @@ pm2 logs waapify-ghl
 1. Go to GHL Marketplace
 2. Install Waapify Plugin
 3. Complete OAuth authorization
-4. Configure Waapify credentials via external auth
+4. **Configure Waapify credentials via external auth** (each user enters their own credentials)
+   - Access Token: User's Waapify access token
+   - Instance ID: User's Waapify instance ID  
+   - WhatsApp Number: User's WhatsApp number
+   
+**Note**: Waapify credentials are NOT in .env file - each user configures their own via external authentication.
 
 ### Step 8: Verify Installation
 ```bash
