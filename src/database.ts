@@ -7,7 +7,7 @@ import mysql from 'mysql2/promise';
 
 // Database configuration
 const DB_CONFIG = {
-  host: process.env.DB_HOST || 'localhost',
+  host: process.env.DB_HOST || '127.0.0.1',
   user: process.env.DB_USER || 'waapify_user',
   password: process.env.DB_PASSWORD || 'QyXnDWo*OPoqCV#sW+++k~eXU?RCub++',
   database: process.env.DB_NAME || 'waapify_ghl',
