@@ -8,11 +8,6 @@ DROP DATABASE IF EXISTS waapify_production;
 CREATE DATABASE waapify_production;
 USE waapify_production;
 
--- Create fresh user with secure password
-DROP USER IF EXISTS 'waapify_prod'@'localhost';
-DROP USER IF EXISTS 'waapify_prod'@'127.0.0.1';
-DROP USER IF EXISTS 'waapify_prod'@'%';
-
 CREATE USER 'waapify_prod'@'localhost' IDENTIFIED BY 'WaaProd2024#SecurePass!';
 CREATE USER 'waapify_prod'@'127.0.0.1' IDENTIFIED BY 'WaaProd2024#SecurePass!';
 
