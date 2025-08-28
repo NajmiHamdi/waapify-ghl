@@ -25,6 +25,9 @@ app.use(json({
   }
 }));
 
+// Handle form-encoded data (for GHL External Auth forms)
+app.use(express.urlencoded({ extended: true }));
+
 // Handle JSON parsing errors
 app.use((error: any, req: any, res: any, next: any) => {
   if (error instanceof SyntaxError && 'body' in error) {
