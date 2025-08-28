@@ -76,9 +76,25 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
     console.log('=== Full Query Params ===', req.query);
     console.log('=== Auth Result ===', authResult);
     
-    if (companyId && locationId) {
+    // If companyId/locationId missing from OAuth, get from latest installation
+    let finalCompanyId = companyId;
+    let finalLocationId = locationId;
+    
+    if (!finalCompanyId || !finalLocationId) {
+      console.log('=== Missing OAuth params, checking latest installation ===');
+      const installations = await Database.getAllInstallations();
+      const latestInstallation = installations[installations.length - 1]; // Most recent
+      
+      if (latestInstallation) {
+        finalCompanyId = latestInstallation.company_id;
+        finalLocationId = latestInstallation.location_id;
+        console.log('=== Found latest installation ===', { finalCompanyId, finalLocationId });
+      }
+    }
+    
+    if (finalCompanyId && finalLocationId) {
       console.log('=== OAuth Success - Redirecting to External Auth Configuration ===');
-      const configUrl = `/config/${companyId}/${locationId}`;
+      const configUrl = `/config/${finalCompanyId}/${finalLocationId}`;
       console.log(`Redirecting to config form: ${configUrl}`);
       return res.redirect(configUrl);
     }
@@ -388,6 +404,117 @@ app.use('*', (req: Request, res: Response, next) => {
     console.log('Body:', JSON.stringify(req.body, null, 2));
   }
   next();
+});
+
+/* -------------------- Configuration Page with Proper Route -------------------- */
+app.get("/config/:companyId/:locationId", (req: Request, res: Response) => {
+  const { companyId, locationId } = req.params;
+  
+  console.log('=== Config Page Requested ===', { companyId, locationId });
+  
+  const configHTML = `
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>Waapify Setup - Final Step</title>
+        <style>
+            body { font-family: Arial, sans-serif; max-width: 600px; margin: 50px auto; padding: 20px; background: #f8f9fa; }
+            .container { background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+            .header { text-align: center; margin-bottom: 30px; }
+            .header h1 { color: #007cba; margin-bottom: 10px; }
+            .header p { color: #666; }
+            .form-group { margin-bottom: 20px; }
+            label { display: block; margin-bottom: 8px; font-weight: bold; color: #333; }
+            input { width: 100%; padding: 12px; border: 1px solid #ddd; border-radius: 6px; box-sizing: border-box; }
+            button { width: 100%; background: #007cba; color: white; padding: 15px; border: none; border-radius: 6px; cursor: pointer; font-size: 16px; font-weight: bold; }
+            button:hover { background: #005a87; }
+            button:disabled { background: #ccc; cursor: not-allowed; }
+            .success { color: #28a745; padding: 10px; background: #d4edda; border-radius: 4px; }
+            .error { color: #dc3545; padding: 10px; background: #f8d7da; border-radius: 4px; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🚀 Waapify Setup</h1>
+                <p>Enter your Waapify credentials to complete the integration</p>
+            </div>
+            
+            <form id="configForm">
+                <div class="form-group">
+                    <label>Waapify Access Token:</label>
+                    <input type="text" id="accessToken" placeholder="1740aed492830374b432091211a6628d" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>Waapify Instance ID:</label>
+                    <input type="text" id="instanceId" placeholder="673F5A50E7194" required>
+                </div>
+                
+                <div class="form-group">
+                    <label>WhatsApp Number:</label>
+                    <input type="text" id="whatsappNumber" placeholder="60168970072">
+                </div>
+                
+                <button type="submit" id="saveBtn">Complete Setup</button>
+            </form>
+            
+            <div id="message"></div>
+        </div>
+        
+        <script>
+            document.getElementById('configForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+                
+                const messageDiv = document.getElementById('message');
+                const saveBtn = document.getElementById('saveBtn');
+                const accessToken = document.getElementById('accessToken').value;
+                const instanceId = document.getElementById('instanceId').value;
+                const whatsappNumber = document.getElementById('whatsappNumber').value;
+                
+                saveBtn.disabled = true;
+                saveBtn.textContent = 'Saving...';
+                messageDiv.innerHTML = '';
+                
+                try {
+                    const response = await fetch('/external-auth', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                            companyId: '${companyId}',
+                            locationId: '${locationId}',
+                            access_token: accessToken,
+                            instance_id: instanceId,
+                            whatsapp_number: whatsappNumber
+                        })
+                    });
+                    
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        messageDiv.innerHTML = '<div class="success">✅ Setup complete! Your Waapify integration is ready.</div>';
+                        setTimeout(() => {
+                            window.location.href = 'https://app.gohighlevel.com/dashboard';
+                        }, 2000);
+                    } else {
+                        messageDiv.innerHTML = '<div class="error">❌ Error: ' + (result.error || 'Setup failed') + '</div>';
+                    }
+                    
+                } catch (error) {
+                    messageDiv.innerHTML = '<div class="error">❌ Connection error. Please try again.</div>';
+                } finally {
+                    saveBtn.disabled = false;
+                    saveBtn.textContent = 'Complete Setup';
+                }
+            });
+        </script>
+    </body>
+    </html>
+  `;
+  
+  res.send(configHTML);
 });
 
 /* -------------------- Alternative External Auth Endpoints for Testing -------------------- */
