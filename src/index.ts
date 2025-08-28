@@ -99,9 +99,9 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
       return res.redirect(configUrl);
     }
     
-    // Fallback: redirect to a waiting page that checks for installation then redirects
-    console.log('=== OAuth Success - Waiting for Installation Data ===');
-    const waitingHTML = `
+    // Fallback: redirect to waiting page that will auto-redirect to custom form
+    console.log('=== OAuth Success - Redirecting to Setup Form ===');
+    const setupHTML = `
       <!DOCTYPE html>
       <html>
       <head>
@@ -113,27 +113,23 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
               .spinner { border: 4px solid #f3f3f3; border-top: 4px solid #25D366; border-radius: 50%; width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 20px auto; }
               @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
               p { color: #666; line-height: 1.6; }
-              .button { display: inline-block; background: #25D366; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; margin-top: 20px; }
-              .button:hover { background: #128C7E; }
           </style>
       </head>
       <body>
           <div class="container">
-              <h1>🚀 Almost Ready!</h1>
+              <h1>🚀 Setting up Waapify...</h1>
               <div class="spinner"></div>
-              <p>Setting up your Waapify integration...</p>
-              <p>You'll need to configure your Waapify credentials to complete the setup.</p>
-              <a href="https://app.gohighlevel.com/marketplace/apps" class="button">Continue Setup in GHL</a>
+              <p>Redirecting to Waapify configuration...</p>
           </div>
           
           <script>
-              // Check for installation every 2 seconds, redirect when ready
+              // Wait for installation to be created, then redirect to custom form
               let attempts = 0;
-              const maxAttempts = 10;
+              const maxAttempts = 15;
               
-              async function checkInstallation() {
+              async function waitAndRedirect() {
                   attempts++;
-                  console.log('Checking for installation... attempt', attempts);
+                  console.log('Waiting for installation... attempt', attempts);
                   
                   try {
                       // Check if installation exists by making a test call
@@ -530,7 +526,7 @@ app.get("/config/:companyId/:locationId", (req: Request, res: Response) => {
                     if (result.success) {
                         messageDiv.innerHTML = '<div class="success">✅ Setup complete! Your Waapify integration is ready.</div>';
                         setTimeout(() => {
-                            window.location.href = 'https://app.gohighlevel.com/dashboard';
+                            window.location.href = 'https://app.gohighlevel.com/agency_launchpad';
                         }, 2000);
                     } else {
                         messageDiv.innerHTML = '<div class="error">❌ Error: ' + (result.error || 'Setup failed') + '</div>';
@@ -606,91 +602,18 @@ app.post("/external-auth", async (req: Request, res: Response) => {
     });
   }
   
-  // Handle real installation data - check all possible field formats
-  if (!access_token && !instance_id) {
-    console.log('=== No credentials found, checking request body keys ===');
-    console.log('Available keys:', Object.keys(req.body));
-    
-    // Try to find credentials in any format
-    for (const key of Object.keys(req.body)) {
-      console.log(`${key}: ${req.body[key]}`);
-    }
-    
-    // Handle GHL installation process - if no credentials provided but locationId present
-    if (req.body.locationId && !req.body.access_token) {
-      console.log('=== GHL Installation Process - Providing Default Success Response ===');
-      
-      // Extract locationId and companyId
-      const locationId = Array.isArray(req.body.locationId) ? req.body.locationId[0] : req.body.locationId;
-      let companyId = req.body.companyId;
-      
-      // If companyId is null, try to find it from existing installations
-      if (!companyId && locationId) {
-        console.log('=== CompanyId is null, searching existing installations ===');
-        try {
-          const installations = await Database.getAllInstallations();
-          const existingInstallation = installations.find(inst => inst.location_id === locationId);
-          if (existingInstallation) {
-            companyId = existingInstallation.company_id;
-            console.log(`✅ Found companyId from existing installation: ${companyId}`);
-          }
-        } catch (error) {
-          console.log('⚠️ Could not search existing installations:', error);
-        }
-      }
-      
-      // This is initial installation - save basic installation record
-      if (locationId && companyId) {
-        try {
-          const installationData = {
-            company_id: companyId,
-            location_id: locationId,
-            access_token: 'pending_external_auth',
-            refresh_token: 'pending_external_auth',
-            expires_in: 3600,
-          };
-          
-          const installationId = await Database.saveInstallation(installationData);
-          console.log(`✅ Basic installation saved: ${installationId} for External Auth flow`);
-        } catch (error) {
-          console.error('❌ Failed to save basic installation:', error);
-        }
-      }
-      
-      return res.json({
-        success: true,
-        message: "Installation process detected - external auth will be configured later",
-        data: {
-          access_token: "pending",
-          instance_id: "pending",
-          whatsapp_number: "pending",
-          status: "installation_pending",
-          provider: "waapify",
-          locationId: locationId,
-          companyId: companyId
-        }
-      });
-    }
-    
+  // Validate required credentials from custom form
+  if (!access_token || !instance_id) {
+    console.log('❌ Missing required Waapify credentials from user form');
     return res.status(400).json({
       success: false,
-      error: "Missing required Waapify credentials",
-      required_fields: ["access_token", "instance_id", "whatsapp_number (optional)"],
-      received_fields: Object.keys(req.body),
-      message: "Please provide your Waapify access_token and instance_id"
+      error: "Missing required Waapify credentials", 
+      message: "Please provide both Access Token and Instance ID",
+      received_fields: Object.keys(req.body)
     });
   }
   
-  if (!access_token || !instance_id) {
-    return res.status(400).json({
-      success: false,
-      error: "Missing required fields: access_token, instance_id",
-      required_fields: ["access_token", "instance_id", "whatsapp_number (optional)"],
-      received_fields: Object.keys(req.body),
-      received_data: req.body,
-      message: "Please fill out all required Waapify credentials in the marketplace form"
-    });
-  }
+  console.log('✅ User provided all required credentials, proceeding with save...');
   
   try {
     // Test Waapify connection
