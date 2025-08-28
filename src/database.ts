@@ -191,9 +191,13 @@ export class Database {
 
   // Save Waapify configuration
   static async saveWaapifyConfig(config: WaapifyConfig): Promise<void> {
+    console.log('📊 === Database.saveWaapifyConfig CALLED ===');
+    console.log('Config data:', JSON.stringify(config, null, 2));
+    
     const connection = await pool.getConnection();
     try {
-      await connection.execute(`
+      console.log('🔄 Executing MySQL INSERT/UPDATE...');
+      const [result] = await connection.execute(`
         INSERT INTO waapify_configs (installation_id, company_id, location_id, access_token, instance_id, whatsapp_number, is_active)
         VALUES (?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
@@ -211,6 +215,14 @@ export class Database {
         config.whatsapp_number,
         config.is_active !== false
       ]);
+      
+      console.log('✅ MySQL INSERT/UPDATE result:', result);
+      console.log('🎉 Database.saveWaapifyConfig COMPLETED SUCCESSFULLY');
+      
+    } catch (error) {
+      console.error('❌ Database.saveWaapifyConfig ERROR:', error);
+      console.error('Config that failed:', config);
+      throw error; // Re-throw to catch in external-auth endpoint
     } finally {
       connection.release();
     }

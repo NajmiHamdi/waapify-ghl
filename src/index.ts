@@ -99,8 +99,8 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
       return res.redirect(configUrl);
     }
     
-    // Fallback: redirect to a generic waiting page that will redirect to external auth
-    console.log('=== OAuth Success - Triggering External Auth Flow ===');
+    // Fallback: redirect to a waiting page that checks for installation then redirects
+    console.log('=== OAuth Success - Waiting for Installation Data ===');
     const waitingHTML = `
       <!DOCTYPE html>
       <html>
@@ -127,10 +127,44 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
           </div>
           
           <script>
-              // Try to trigger external auth or redirect back to GHL after a moment
-              setTimeout(() => {
-                  window.location.href = 'https://app.gohighlevel.com/marketplace/apps';
-              }, 3000);
+              // Check for installation every 2 seconds, redirect when ready
+              let attempts = 0;
+              const maxAttempts = 10;
+              
+              async function checkInstallation() {
+                  attempts++;
+                  console.log('Checking for installation... attempt', attempts);
+                  
+                  try {
+                      // Check if installation exists by making a test call
+                      const response = await fetch('/api/installations-check', {
+                          method: 'GET'
+                      });
+                      
+                      if (response.ok) {
+                          const data = await response.json();
+                          if (data.hasInstallations && data.latest) {
+                              console.log('Installation found! Redirecting to config form...');
+                              window.location.href = \`/config/\${data.latest.company_id}/\${data.latest.location_id}\`;
+                              return;
+                          }
+                      }
+                  } catch (error) {
+                      console.log('Check failed:', error);
+                  }
+                  
+                  // If max attempts reached, redirect to GHL
+                  if (attempts >= maxAttempts) {
+                      console.log('Max attempts reached, redirecting to GHL...');
+                      window.location.href = 'https://app.gohighlevel.com/marketplace/apps';
+                  } else {
+                      // Try again in 2 seconds
+                      setTimeout(checkInstallation, 2000);
+                  }
+              }
+              
+              // Start checking after 2 seconds
+              setTimeout(checkInstallation, 2000);
           </script>
       </body>
       </html>
@@ -535,18 +569,24 @@ app.post("/authenticate", async (req: Request, res: Response) => {
 
 /* -------------------- External Authentication Endpoint -------------------- */
 app.post("/external-auth", async (req: Request, res: Response) => {
-  console.log('=== External Auth Request - Full Body ===', JSON.stringify(req.body, null, 2));
-  console.log('=== Headers ===', req.headers);
+  console.log('🔍 === EXTERNAL AUTH ENDPOINT - USER SUBMITTING CREDENTIALS ===');
+  console.log('Request method:', req.method);
+  console.log('Content-Type:', req.headers['content-type']);
+  console.log('Raw Body:', JSON.stringify(req.body, null, 2));
+  console.log('Raw Query:', JSON.stringify(req.query, null, 2));
+  console.log('All Headers:', JSON.stringify(req.headers, null, 2));
   
-  // Check all possible field variations for Waapify
-  const access_token = req.body.access_token || req.body.accessToken || req.body['access-token'];
-  const instance_id = req.body.instance_id || req.body.instanceId || req.body['instance-id'];
-  const whatsapp_number = req.body.whatsapp_number || req.body.whatsappNumber || req.body['whatsapp-number'];
+  // Check ALL possible ways GHL might send form data
+  const access_token = req.body.access_token || req.body.accessToken || req.body['access-token'] || req.query.access_token;
+  const instance_id = req.body.instance_id || req.body.instanceId || req.body['instance-id'] || req.query.instance_id;
+  const whatsapp_number = req.body.whatsapp_number || req.body.whatsappNumber || req.body['whatsapp-number'] || req.query.whatsapp_number;
   
-  console.log('=== Extracted Values ===', {
-    access_token,
-    instance_id, 
-    whatsapp_number
+  console.log('🎯 === EXTRACTED USER CREDENTIALS ===', {
+    access_token: access_token ? 'PROVIDED' : 'MISSING',
+    instance_id: instance_id ? 'PROVIDED' : 'MISSING',
+    whatsapp_number: whatsapp_number ? 'PROVIDED' : 'MISSING',
+    raw_access_token: access_token,
+    raw_instance_id: instance_id
   });
   
   // Handle test data from marketplace
@@ -791,6 +831,39 @@ async function testWaapifyConnection(accessToken: string, instanceId: string) {
   }
 }
 
+/* -------------------- Installations Check API -------------------- */
+app.get("/api/installations-check", async (req: Request, res: Response) => {
+  console.log('=== Installations Check API Request ===');
+  
+  try {
+    const installations = await Database.getAllInstallations();
+    console.log(`Found ${installations.length} installations`);
+    
+    const hasInstallations = installations.length > 0;
+    const latest = hasInstallations ? installations[installations.length - 1] : null;
+    
+    return res.json({
+      success: true,
+      hasInstallations,
+      latest: latest ? {
+        company_id: latest.company_id,
+        location_id: latest.location_id,
+        installed_at: latest.installed_at
+      } : null,
+      totalInstallations: installations.length
+    });
+    
+  } catch (error) {
+    console.error('❌ Installations check error:', error);
+    return res.status(500).json({
+      success: false,
+      hasInstallations: false,
+      latest: null,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+  }
+});
+
 /* -------------------- Phone Numbers API for GHL -------------------- */
 app.get("/api/phone-numbers", async (req: Request, res: Response) => {
   const { companyId, locationId } = req.query as { companyId: string; locationId: string };
@@ -885,15 +958,16 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
           const installationId = await Database.saveInstallation(installationData);
           console.log(`✅ Installation saved: ${installationId} for company: ${companyId}, location: ${locationId}`);
           
-          // Return response that indicates external auth is needed
-          return res.status(202).json({ 
+          // Return response that redirects to config form
+          console.log('=== INSTALL Complete - Should Redirect to Config ===');
+          return res.status(200).json({ 
             success: true, 
-            message: "Installation successful - External authentication required",
+            message: "Installation successful",
             installationId: installationId,
-            status: "pending_auth",
-            requires_external_auth: true,
-            auth_url: "https://waaghl.waapify.com/external-auth",
-            redirect_url: `https://waaghl.waapify.com/config/${companyId}/${locationId}`
+            status: "installed",
+            redirect_url: `https://waaghl.waapify.com/config/${companyId}/${locationId}`,
+            // GHL might use this for automatic redirect
+            location: `https://waaghl.waapify.com/config/${companyId}/${locationId}`
           });
           
         case 'EXTERNAL_AUTH_CONNECTED':
