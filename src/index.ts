@@ -374,6 +374,18 @@ app.post("/save-waapify-config", async (req: Request, res: Response) => {
   }
 });
 
+/* -------------------- Debug: Log ALL requests to catch missing form submissions -------------------- */
+app.use('*', (req: Request, res: Response, next) => {
+  if (req.method === 'POST' && (req.url.includes('auth') || req.body.access_token || req.body.accessToken)) {
+    console.log(`🔍 === CATCHING POST REQUEST TO ${req.url} ===`);
+    console.log('Method:', req.method);
+    console.log('Content-Type:', req.headers['content-type']);
+    console.log('Body Keys:', Object.keys(req.body));
+    console.log('Body:', JSON.stringify(req.body, null, 2));
+  }
+  next();
+});
+
 /* -------------------- External Authentication Endpoint -------------------- */
 app.post("/external-auth", async (req: Request, res: Response) => {
   console.log('=== External Auth Request - Full Body ===', JSON.stringify(req.body, null, 2));
