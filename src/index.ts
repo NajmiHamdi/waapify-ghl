@@ -844,18 +844,21 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
         recipient: phone,
         message: message,
         type: attachments && attachments.length > 0 ? 'media' : 'text',
-        status: 'sent',
-        sentAt: new Date().toISOString()
+        status: 'delivered',
+        sentAt: whatsappResult.timestamp || new Date().toISOString()
       });
       
-      // GHL expects specific response format
+      // GHL expects specific response format with delivery status
       res.json({
         success: true,
         conversationId: `conv_${locationId}_${contactId}`,
         messageId: whatsappResult.messageId || messageId || `wa_${Date.now()}`,
         message: message,
         contactId: contactId,
-        dateAdded: new Date().toISOString()
+        status: 'delivered',
+        deliveredAt: whatsappResult.timestamp || new Date().toISOString(),
+        dateAdded: new Date().toISOString(),
+        provider: 'waapify'
       });
     } else {
       console.error(`❌ WhatsApp send failed:`, whatsappResult.error);
@@ -1613,9 +1616,14 @@ async function sendWhatsAppMessage(number: string, message: string, accessToken:
       params: params
     });
     
+    // Check if Waapify actually sent the message successfully
+    const waapifySuccess = response.data.status === 'success' || response.data.data?.status === 'PENDING';
+    
     return {
-      success: true,
-      messageId: response.data.id || Date.now().toString(),
+      success: waapifySuccess,
+      messageId: response.data.id || response.data.data?.key?.id || Date.now().toString(),
+      status: waapifySuccess ? 'delivered' : 'failed',
+      timestamp: new Date().toISOString(),
       data: response.data
     };
   } catch (error: any) {
