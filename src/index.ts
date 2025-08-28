@@ -72,6 +72,10 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
     const companyId = req.query.companyId as string;
     const locationId = req.query.locationId as string;
     
+    console.log('=== OAuth Success - Checking Params ===', { companyId, locationId });
+    console.log('=== Full Query Params ===', req.query);
+    console.log('=== Auth Result ===', authResult);
+    
     if (companyId && locationId) {
       console.log('=== OAuth Success - Redirecting to External Auth Configuration ===');
       const configUrl = `/config/${companyId}/${locationId}`;
@@ -767,6 +771,21 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
           
         case 'EXTERNAL_AUTH_CONNECTED':
           console.log('=== Processing EXTERNAL_AUTH_CONNECTED webhook ===');
+          console.log('=== EXTERNAL_AUTH_CONNECTED Full Data ===', JSON.stringify(req.body, null, 2));
+          
+          // Check if credentials come through this webhook
+          const authData = req.body.authData || req.body.credentials || req.body.config;
+          if (authData) {
+            console.log('🔍 Found auth data in webhook:', authData);
+            
+            // Try to save credentials from webhook
+            const { access_token, instance_id, whatsapp_number } = authData;
+            if (access_token && instance_id && locationId) {
+              console.log('=== Saving credentials from EXTERNAL_AUTH_CONNECTED webhook ===');
+              // Save logic here if needed
+            }
+          }
+          
           return res.json({ 
             success: true, 
             message: "External auth connected webhook received" 
