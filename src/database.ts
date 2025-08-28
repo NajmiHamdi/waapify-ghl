@@ -189,14 +189,12 @@ export class Database {
   // WAAPIFY CONFIG OPERATIONS
   // ========================================
 
-  // Save Waapify configuration
+  // Save Waapify configuration - OPTIMIZED FOR SPEED
   static async saveWaapifyConfig(config: WaapifyConfig): Promise<void> {
-    console.log('📊 === Database.saveWaapifyConfig CALLED ===');
-    console.log('Config data:', JSON.stringify(config, null, 2));
+    console.log('⚡ FAST SAVE: Database.saveWaapifyConfig');
     
     const connection = await pool.getConnection();
     try {
-      console.log('🔄 Executing MySQL INSERT/UPDATE...');
       const [result] = await connection.execute(`
         INSERT INTO waapify_configs (installation_id, company_id, location_id, access_token, instance_id, whatsapp_number, is_active)
         VALUES (?, ?, ?, ?, ?, ?, ?)
@@ -216,13 +214,11 @@ export class Database {
         config.is_active !== false
       ]);
       
-      console.log('✅ MySQL INSERT/UPDATE result:', result);
-      console.log('🎉 Database.saveWaapifyConfig COMPLETED SUCCESSFULLY');
+      console.log('✅ FAST SAVE COMPLETE');
       
     } catch (error) {
-      console.error('❌ Database.saveWaapifyConfig ERROR:', error);
-      console.error('Config that failed:', config);
-      throw error; // Re-throw to catch in external-auth endpoint
+      console.error('❌ SAVE ERROR:', error);
+      throw error;
     } finally {
       connection.release();
     }

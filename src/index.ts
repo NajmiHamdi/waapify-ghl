@@ -673,14 +673,10 @@ app.post("/external-auth", async (req: Request, res: Response) => {
             is_active: true
           };
           
-          console.log('=== Calling Database.saveWaapifyConfig ===');
-          try {
-            await Database.saveWaapifyConfig(waapifyConfig);
-            console.log('✅ Waapify config saved successfully to database!');
+          // INSTANT SAVE - No logging for speed
+          await Database.saveWaapifyConfig(waapifyConfig);
             
-            // Return success immediately after save (like storage.js) - no testing needed
-            console.log('🎉 Returning instant success - credentials saved!');
-            return res.json({
+          return res.json({
               success: true,
               message: "Waapify credentials saved successfully! Setup complete.",
               data: {
