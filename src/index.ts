@@ -533,6 +533,8 @@ app.post("/external-auth", async (req: Request, res: Response) => {
         }
         
         if (installation && installation.id) {
+          console.log('=== About to save waapify_config ===', { installation_id: installation.id, companyId, locationId });
+          
           const waapifyConfig: WaapifyConfig = {
             installation_id: installation.id,
             company_id: companyId,
@@ -542,7 +544,17 @@ app.post("/external-auth", async (req: Request, res: Response) => {
             whatsapp_number: whatsapp_number || 'unknown',
             is_active: true
           };
-          await Database.saveWaapifyConfig(waapifyConfig);
+          
+          console.log('=== Calling Database.saveWaapifyConfig ===');
+          try {
+            await Database.saveWaapifyConfig(waapifyConfig);
+            console.log('✅ Waapify config saved successfully to database!');
+          } catch (saveError) {
+            console.error('❌ Failed to save waapify_config:', saveError);
+            throw saveError;
+          }
+        } else {
+          console.log('❌ No installation found - cannot save waapify_config');
         }
       }
       
@@ -2654,6 +2666,6 @@ app.get("/admin/backup", async (req: Request, res: Response) => {
 /* -------------------- Start server -------------------- */
 app.listen(port, async () => {
   console.log(`GHL app listening on port ${port}`);
-  console.log('🔄 Running auto-recovery check...');
-  await ensureCriticalInstallations();
+  // Auto-recovery disabled for faster startup
+  // await ensureCriticalInstallations();
 });
