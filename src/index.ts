@@ -386,6 +386,22 @@ app.use('*', (req: Request, res: Response, next) => {
   next();
 });
 
+/* -------------------- Alternative External Auth Endpoints for Testing -------------------- */
+app.post("/auth", async (req: Request, res: Response) => {
+  console.log('🔍 === /auth endpoint called ===', JSON.stringify(req.body, null, 2));
+  res.json({ success: true, endpoint: '/auth', received: req.body });
+});
+
+app.post("/external-authentication", async (req: Request, res: Response) => {
+  console.log('🔍 === /external-authentication endpoint called ===', JSON.stringify(req.body, null, 2));
+  res.json({ success: true, endpoint: '/external-authentication', received: req.body });
+});
+
+app.post("/authenticate", async (req: Request, res: Response) => {
+  console.log('🔍 === /authenticate endpoint called ===', JSON.stringify(req.body, null, 2));
+  res.json({ success: true, endpoint: '/authenticate', received: req.body });
+});
+
 /* -------------------- External Authentication Endpoint -------------------- */
 app.post("/external-auth", async (req: Request, res: Response) => {
   console.log('=== External Auth Request - Full Body ===', JSON.stringify(req.body, null, 2));
