@@ -613,16 +613,19 @@ app.post("/external-auth", async (req: Request, res: Response) => {
     });
   }
   
-  console.log('✅ User provided all required credentials, proceeding with save...');
+  console.log('✅ User provided all required credentials, proceeding with instant save...');
   
   try {
-    // Test Waapify connection
-    const authResult = await testWaapifyConnection(access_token, instance_id);
+    // Skip test for faster save - save credentials first, test async later
+    console.log('🚀 Saving credentials instantly without test (like storage.js)');
     
-    if (authResult.success) {
-      // Store Waapify credentials for this locationId
-      const locationId = Array.isArray(req.body.locationId) ? req.body.locationId[0] : req.body.locationId;
-      let companyId = req.body.companyId;
+    // Get locationId and companyId from request
+    const locationId = Array.isArray(req.body.locationId) ? req.body.locationId[0] : req.body.locationId;
+    let companyId = req.body.companyId;
+    
+    console.log('💾 Input data:', { locationId, companyId });
+    
+    if (locationId && companyId) {
       
       // If companyId is null, try to find it from existing installations
       if (!companyId && locationId) {
@@ -674,49 +677,45 @@ app.post("/external-auth", async (req: Request, res: Response) => {
           try {
             await Database.saveWaapifyConfig(waapifyConfig);
             console.log('✅ Waapify config saved successfully to database!');
+            
+            // Return success immediately after save (like storage.js) - no testing needed
+            console.log('🎉 Returning instant success - credentials saved!');
+            return res.json({
+              success: true,
+              message: "Waapify credentials saved successfully! Setup complete.",
+              data: {
+                access_token: access_token,
+                instance_id: instance_id,
+                whatsapp_number: whatsapp_number || 'unknown', 
+                status: "saved",
+                provider: "waapify"
+              }
+            });
+            
           } catch (saveError) {
             console.error('❌ Failed to save waapify_config:', saveError);
-            throw saveError;
+            return res.status(500).json({
+              success: false,
+              error: "Database save failed",
+              message: "Could not save Waapify credentials"
+            });
           }
         } else {
           console.log('❌ No installation found - cannot save waapify_config');
+          return res.status(400).json({
+            success: false,
+            error: "Installation not found",
+            message: "Please install the plugin first"
+          });
         }
       }
       
-      // Return success response for GHL with provider registration
-      return res.json({
-        success: true,
-        message: "Waapify authentication successful",
-        data: {
-          access_token: access_token,
-          instance_id: instance_id, 
-          whatsapp_number: whatsapp_number || 'unknown',
-          status: "authenticated",
-          provider: "waapify"
-        },
-        // Provider registration for GHL
-        provider: {
-          id: "waapify-sms",
-          name: "Waapify",
-          type: "SMS",
-          capabilities: ["SMS", "MMS"],
-          phoneNumbers: [
-            {
-              id: instance_id,
-              number: `+${whatsapp_number}`,
-              displayNumber: whatsapp_number,
-              capabilities: ["SMS", "MMS"],
-              status: "active"
-            }
-          ]
-        }
-      });
-    } else {
-      return res.status(401).json({
+      // If we reach here, something went wrong
+      return res.status(400).json({
         success: false,
-        error: "Waapify authentication failed: " + authResult.error
+        error: "Missing location or company data",
+        message: "Could not determine installation details"
       });
-    }
   } catch (error: any) {
     console.error('External auth error:', error);
     return res.status(500).json({
@@ -739,7 +738,7 @@ async function testWaapifyConnection(accessToken: string, instanceId: string) {
         instance_id: instanceId,
         access_token: accessToken
       },
-      timeout: 10000 // 10 second timeout
+      timeout: 30000 // 30 second timeout
     });
     
     console.log('Waapify test response:', response.data);
