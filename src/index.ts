@@ -420,7 +420,22 @@ app.post("/external-auth", async (req: Request, res: Response) => {
       
       // Extract locationId and companyId
       const locationId = Array.isArray(req.body.locationId) ? req.body.locationId[0] : req.body.locationId;
-      const companyId = req.body.companyId;
+      let companyId = req.body.companyId;
+      
+      // If companyId is null, try to find it from existing installations
+      if (!companyId && locationId) {
+        console.log('=== CompanyId is null, searching existing installations ===');
+        try {
+          const installations = await Database.getAllInstallations();
+          const existingInstallation = installations.find(inst => inst.location_id === locationId);
+          if (existingInstallation) {
+            companyId = existingInstallation.company_id;
+            console.log(`✅ Found companyId from existing installation: ${companyId}`);
+          }
+        } catch (error) {
+          console.log('⚠️ Could not search existing installations:', error);
+        }
+      }
       
       // This is initial installation - save basic installation record
       if (locationId && companyId) {
@@ -482,7 +497,22 @@ app.post("/external-auth", async (req: Request, res: Response) => {
     if (authResult.success) {
       // Store Waapify credentials for this locationId
       const locationId = Array.isArray(req.body.locationId) ? req.body.locationId[0] : req.body.locationId;
-      const companyId = req.body.companyId;
+      let companyId = req.body.companyId;
+      
+      // If companyId is null, try to find it from existing installations
+      if (!companyId && locationId) {
+        console.log('=== CompanyId is null for credential save, searching existing installations ===');
+        try {
+          const installations = await Database.getAllInstallations();
+          const existingInstallation = installations.find(inst => inst.location_id === locationId);
+          if (existingInstallation) {
+            companyId = existingInstallation.company_id;
+            console.log(`✅ Found companyId for credential save: ${companyId}`);
+          }
+        } catch (error) {
+          console.log('⚠️ Could not search existing installations for credentials:', error);
+        }
+      }
       
       if (locationId && companyId) {
         console.log('=== Storing Waapify Config ===', { locationId, companyId, instance_id });
