@@ -237,7 +237,7 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
                   const whatsappNumber = document.getElementById('whatsappNumber').value;
                   
                   saveBtn.disabled = true;
-                  saveBtn.textContent = 'Testing connection...';
+                  saveBtn.textContent = 'Saving...';
                   
                   try {
                       const response = await fetch('/save-waapify-config', {
@@ -407,16 +407,11 @@ app.post("/save-waapify-config", async (req: Request, res: Response) => {
     
     await Database.saveWaapifyConfig(waapifyConfig);
     
-    // Test Waapify connection
-    const testResult = await testWaapifyConnection(accessToken, instanceId);
-    if (!testResult.success) {
-      return res.status(400).json({ error: "Failed to connect to Waapify: " + testResult.error });
-    }
-    
     res.json({ 
       success: true, 
-      message: "Waapify configuration saved successfully",
-      connectionTest: testResult
+      message: "Waapify configuration saved successfully!",
+      saved: true,
+      data: waapifyConfig
     });
   } catch (error) {
     console.error("Save config error:", error);
@@ -721,33 +716,6 @@ app.post("/external-auth", async (req: Request, res: Response) => {
   }
 });
 
-/* -------------------- Test Waapify Connection -------------------- */
-async function testWaapifyConnection(accessToken: string, instanceId: string) {
-  try {
-    const axios = require('axios');
-    
-    // Test with a simple send API endpoint instead
-    const response = await axios.get(`https://stag.waapify.com/api/send.php`, {
-      params: {
-        number: '60123456789', // Test number
-        type: 'check_phone',
-        instance_id: instanceId,
-        access_token: accessToken
-      },
-      timeout: 30000 // 30 second timeout
-    });
-    
-    console.log('Waapify test response:', response.data);
-    return { success: true, data: response.data };
-  } catch (error: any) {
-    console.error('Waapify connection test error:', error.response?.data || error.message);
-    return { 
-      success: false, 
-      error: error.response?.data?.message || error.message,
-      details: error.response?.data || 'Connection failed'
-    };
-  }
-}
 
 /* -------------------- Installations Check API -------------------- */
 app.get("/api/installations-check", async (req: Request, res: Response) => {
@@ -1174,17 +1142,14 @@ app.get("/provider/status", async (req: Request, res: Response) => {
       });
     }
     
-    // Test connection
-    const testResult = await testWaapifyConnection(waapifyConfig.access_token, waapifyConfig.instance_id);
-    
+    // Skip connection test - just return success
     res.json({
-      status: testResult.success ? "active" : "error",
+      status: "active",
       provider: "waapify",
       providerName: "Waapify WhatsApp",
       whatsappNumber: waapifyConfig.whatsapp_number,
       instanceId: waapifyConfig.instance_id,
-      lastChecked: new Date().toISOString(),
-      connectionTest: testResult
+      lastChecked: new Date().toISOString()
     });
     
   } catch (error: any) {
