@@ -85,7 +85,7 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
       const installations = await Database.getAllInstallations();
       const latestInstallation = installations[installations.length - 1]; // Most recent
       
-      if (latestInstallation) {
+      if (latestInstallation && latestInstallation.location_id) {
         finalCompanyId = latestInstallation.company_id;
         finalLocationId = latestInstallation.location_id;
         console.log('=== Found latest installation ===', { finalCompanyId, finalLocationId });
