@@ -708,13 +708,14 @@ app.post("/external-auth", async (req: Request, res: Response) => {
           });
         }
       }
+    }
       
-      // If we reach here, something went wrong
-      return res.status(400).json({
-        success: false,
-        error: "Missing location or company data",
-        message: "Could not determine installation details"
-      });
+    // If we reach here, something went wrong
+    return res.status(400).json({
+      success: false,
+      error: "Missing location or company data",
+      message: "Could not determine installation details"
+    });
   } catch (error: any) {
     console.error('External auth error:', error);
     return res.status(500).json({
