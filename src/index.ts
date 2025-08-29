@@ -672,24 +672,25 @@ app.post("/external-auth", async (req: Request, res: Response) => {
           
           console.log('🔍 === DEBUG: About to save to database ===', { config: waapifyConfig });
           
-          // INSTANT SAVE - No API test, just save to database
-          await Database.saveWaapifyConfig(waapifyConfig);
-          
-          console.log('🔍 === DEBUG: Database save completed successfully ===');
-          console.log('🔍 === DEBUG: Returning success response to frontend ===');
+          try {
+            // INSTANT SAVE - No API test, just save to database
+            await Database.saveWaapifyConfig(waapifyConfig);
             
-          return res.json({
-              success: true,
-              message: "Waapify credentials saved successfully! Setup complete.",
-              data: {
-                access_token: access_token,
-                instance_id: instance_id,
-                whatsapp_number: whatsapp_number || 'unknown', 
-                status: "saved",
-                provider: "waapify"
-              }
-            });
-            
+            console.log('🔍 === DEBUG: Database save completed successfully ===');
+            console.log('🔍 === DEBUG: Returning success response to frontend ===');
+              
+            return res.json({
+                success: true,
+                message: "Waapify credentials saved successfully! Setup complete.",
+                data: {
+                  access_token: access_token,
+                  instance_id: instance_id,
+                  whatsapp_number: whatsapp_number || 'unknown', 
+                  status: "saved",
+                  provider: "waapify"
+                }
+              });
+              
           } catch (saveError) {
             console.error('❌ Failed to save waapify_config:', saveError);
             return res.status(500).json({
