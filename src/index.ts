@@ -1009,18 +1009,12 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
       
       // Update GHL message status to delivered with timestamp
       try {
-        // Get location token for message status update (requires Sub-Account Token)
-        await ghl.getLocationTokenFromCompanyToken(installation.company_id, locationId);
-        const locationToken = await Database.getTokenForLocation(locationId);
-        
-        if (locationToken) {
-          await updateGHLMessageStatus(messageId, 'delivered', locationToken);
-          console.log(`✅ GHL message status updated to delivered for ${messageId}`);
-        } else {
-          console.error(`⚠️ No location token found for ${locationId}`);
-        }
+        // Try with company token first (most marketplace apps work this way)
+        await updateGHLMessageStatus(messageId, 'delivered', installation.access_token);
+        console.log(`✅ GHL message status updated to delivered for ${messageId}`);
       } catch (statusError: any) {
         console.error(`⚠️ Failed to update GHL message status:`, statusError.message);
+        // Don't fail the whole request - message was sent successfully
       }
       
       // GHL expects specific response format with delivery status
