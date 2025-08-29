@@ -1,5 +1,6 @@
 import express, { Express, Request, Response } from "express";
 import dotenv from "dotenv";
+import axios from "axios";
 import { GHL } from "./ghl";
 import { Database, Installation, WaapifyConfig, AIConfig } from "./database";
 import { json } from "body-parser";
@@ -1006,6 +1007,14 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
         sentAt: whatsappResult.timestamp || new Date().toISOString()
       });
       
+      // Update GHL message status to delivered with timestamp
+      try {
+        await updateGHLMessageStatus(messageId, 'delivered', installation.access_token);
+        console.log(`✅ GHL message status updated to delivered for ${messageId}`);
+      } catch (statusError: any) {
+        console.error(`⚠️ Failed to update GHL message status:`, statusError.message);
+      }
+      
       // GHL expects specific response format with delivery status
       res.json({
         success: true,
@@ -1787,6 +1796,37 @@ async function sendWhatsAppMessage(number: string, message: string, accessToken:
       success: false,
       error: error.response?.data?.message || error.message
     };
+  }
+}
+
+/* -------------------- Update GHL Message Status -------------------- */
+async function updateGHLMessageStatus(messageId: string, status: 'delivered' | 'failed' | 'read', accessToken: string) {
+  try {
+    const timestamp = new Date().toISOString();
+    console.log(`🔄 Updating GHL message ${messageId} status to ${status} at ${timestamp}`);
+    
+    const response = await axios.put(
+      `https://services.leadconnectorhq.com/conversations/messages/${messageId}/status`,
+      {
+        status: status,
+        deliveredAt: status === 'delivered' ? timestamp : undefined,
+        readAt: status === 'read' ? timestamp : undefined,
+        failedAt: status === 'failed' ? timestamp : undefined
+      },
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          'Accept': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        }
+      }
+    );
+    
+    console.log(`✅ GHL message status update response:`, response.data);
+    return response.data;
+  } catch (error: any) {
+    console.error(`❌ GHL message status update failed:`, error.response?.data || error.message);
+    throw error;
   }
 }
 
