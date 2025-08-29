@@ -1021,17 +1021,11 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
       //   console.error(`⚠️ Failed to update GHL message status:`, statusError.message);
       // }
       
-      // GHL expects specific response format with delivery status
-      res.json({
+      // Conversation Provider should return simple 200 OK response
+      // GHL handles conversation status automatically for SMS providers
+      res.status(200).json({
         success: true,
-        conversationId: `conv_${locationId}_${contactId}`,
-        messageId: whatsappResult.messageId || messageId || `wa_${Date.now()}`,
-        message: message,
-        contactId: contactId,
-        status: 'delivered',
-        deliveredAt: whatsappResult.timestamp || new Date().toISOString(),
-        dateAdded: new Date().toISOString(),
-        provider: 'waapify'
+        messageId: whatsappResult.messageId || messageId
       });
     } else {
       console.error(`❌ WhatsApp send failed:`, whatsappResult.error);
