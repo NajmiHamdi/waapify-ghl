@@ -14,7 +14,7 @@ dotenv.config();
 
 const app: Express = express();
 const ghl = new GHL();
-const port = process.env.PORT || 3068;
+const port = process.env.PORT || 3001;
 const path = __dirname + "/ui/dist/";
 
 // Body parser with error handling
