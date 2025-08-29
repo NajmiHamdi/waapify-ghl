@@ -609,6 +609,7 @@ app.post("/external-auth", async (req: Request, res: Response) => {
   }
   
   console.log('✅ User provided all required credentials, proceeding with instant save...');
+  console.log('🔍 === DEBUG: Starting external-auth processing ===');
   
   try {
     // Skip test for faster save - save credentials first, test async later
@@ -657,6 +658,7 @@ app.post("/external-auth", async (req: Request, res: Response) => {
         
         if (installation && installation.id) {
           console.log('=== About to save waapify_config ===', { installation_id: installation.id, companyId, locationId });
+          console.log('🔍 === DEBUG: Creating WaapifyConfig object ===');
           
           const waapifyConfig: WaapifyConfig = {
             installation_id: installation.id,
@@ -668,8 +670,13 @@ app.post("/external-auth", async (req: Request, res: Response) => {
             is_active: true
           };
           
-          // INSTANT SAVE - No logging for speed
+          console.log('🔍 === DEBUG: About to save to database ===', { config: waapifyConfig });
+          
+          // INSTANT SAVE - No API test, just save to database
           await Database.saveWaapifyConfig(waapifyConfig);
+          
+          console.log('🔍 === DEBUG: Database save completed successfully ===');
+          console.log('🔍 === DEBUG: Returning success response to frontend ===');
             
           return res.json({
               success: true,
