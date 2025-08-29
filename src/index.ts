@@ -155,18 +155,18 @@ app.get("/authorize-handler", async (req: Request, res: Response) => {
                       window.location.href = 'https://app.gohighlevel.com/marketplace/apps';
                   } else {
                       // Try again in 2 seconds
-                      setTimeout(checkInstallation, 2000);
+                      setTimeout(waitAndRedirect, 2000);
                   }
               }
               
               // Start checking after 2 seconds
-              setTimeout(checkInstallation, 2000);
+              setTimeout(waitAndRedirect, 2000);
           </script>
       </body>
       </html>
     `;
     
-    return res.send(waitingHTML);
+    return res.send(setupHTML);
     
     console.log('=== OAuth Success - Redirecting to GHL Dashboard ===');
     res.redirect('https://app.gohighlevel.com/');
