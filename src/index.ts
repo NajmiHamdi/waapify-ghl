@@ -1008,14 +1008,18 @@ app.post("/webhook/provider-outbound", async (req: Request, res: Response) => {
       });
       
       // Update GHL message status to delivered with timestamp
-      try {
-        // Try with company token first (most marketplace apps work this way)
-        await updateGHLMessageStatus(messageId, 'delivered', installation.access_token);
-        console.log(`✅ GHL message status updated to delivered for ${messageId}`);
-      } catch (statusError: any) {
-        console.error(`⚠️ Failed to update GHL message status:`, statusError.message);
-        // Don't fail the whole request - message was sent successfully
-      }
+      // TODO: Temporarily disabled due to token permission issues
+      // GHL message status API requires Sub-Account Token but we only have Company Token
+      // Messages are sent successfully, users will need to check WhatsApp directly for delivery confirmation
+      console.log(`📝 Note: GHL status update disabled - message sent successfully to WhatsApp`);
+      
+      // Uncomment when proper location token is implemented:
+      // try {
+      //   await updateGHLMessageStatus(messageId, 'delivered', locationToken);
+      //   console.log(`✅ GHL message status updated to delivered for ${messageId}`);
+      // } catch (statusError: any) {
+      //   console.error(`⚠️ Failed to update GHL message status:`, statusError.message);
+      // }
       
       // GHL expects specific response format with delivery status
       res.json({
