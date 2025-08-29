@@ -1783,14 +1783,17 @@ async function sendWhatsAppMessage(number: string, message: string, accessToken:
     });
     
     // Check if Waapify actually sent the message successfully
-    const waapifySuccess = response.data.status === 'success' || response.data.data?.status === 'PENDING';
+    const responseData = response.data || {};
+    const waapifySuccess = responseData.status === 'success' || responseData.data?.status === 'PENDING';
+    
+    console.log('🔍 Waapify response:', JSON.stringify(responseData, null, 2));
     
     return {
       success: waapifySuccess,
-      messageId: response.data.id || response.data.data?.key?.id || Date.now().toString(),
+      messageId: responseData.id || responseData.data?.key?.id || Date.now().toString(),
       status: waapifySuccess ? 'delivered' : 'failed',
       timestamp: new Date().toISOString(),
-      data: response.data
+      data: responseData
     };
   } catch (error: any) {
     console.error("WhatsApp send error:", error);
